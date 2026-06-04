@@ -1,0 +1,137 @@
+# Muraqib Claude Auto-Fix
+#
+# Triggered by muraqib-nightly.yml on test failure.
+# Opens a GitHub Issue with @claude tag + full failure context.
+# Claude Code GitHub App picks it up and opens a PR with the fix.
+#
+# Required secrets:
+#   ANTHROPIC_API_KEY   — for Claude Code Action (free with Claude Max)
+#   RESEND_API_KEY      — for failure notification email
+
+name: Muraqib Claude Auto-Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "GitHub Actions run ID that failed"
+        required: true
+        type: string
+      summary:
+        description: "Short summary of what failed"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results-json
+          path: artifacts/
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Build issue body
+        id: issue_body
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{ inputs.run_id }}`;
+            const summary = `${{ inputs.summary }}` || "Unknown failure";
+
+            let failureDetails = "";
+            const jsonPath = "artifacts/results.json";
+            if (fs.existsSync(jsonPath)) {
+              try {
+                const data = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+                const failed = (data.suites || []).flatMap(s => (s.specs || []).flatMap(sp => sp.tests || []))
+                  .filter(t => (t.results || []).some(r => r.status === "failed"));
+                failureDetails = failed.slice(0, 5).map(t => {
+                  const r = (t.results || []).find(r => r.status === "failed") || {};
+                  const err = (r.error?.message || "(no message)").slice(0, 800);
+                  return `### ${t.title || "Unknown test"}\n\n\`\`\`\n${err}\n\`\`\`\n`;
+                }).join("\n---\n");
+              } catch (e) {
+                failureDetails = `(could not parse results.json: ${e.message})`;
+              }
+            } else {
+              failureDetails = "(no test results JSON available)";
+            }
+
+            const body = `@claude please investigate.
+
+## Muraqib: nightly tests failed
+
+**Summary:** ${summary}
+**Run:** ${runUrl}
+
+## Failed tests
+
+${failureDetails}
+
+## What to do
+
+1. Read the relevant spec in \`tests/<flow>.spec.ts\`.
+2. Diagnose: is the failure in the test (stale selector/URL) or in production code (crash, missing route)?
+3. Fix the right place:
+   - Test wrong → update the spec
+   - Production broken → fix \`server/\` or \`client/\`
+4. Open a PR:
+   - Title: \`fix(muraqib): <short description>\`
+   - Body: which option it was, which files changed, safe for auto-merge?
+5. Do NOT:
+   - Run DB migrations without approval
+   - Touch Stripe/payment/auth logic without approval
+
+## Auto-merge
+
+Enable auto-merge (squash) on the PR. GitHub merges automatically when CI is green.
+Exception: DB migrations, payment changes — mark those for manual review instead.
+`;
+
+            core.setOutput("body", body);
+            core.setOutput("title", `[Muraqib] Nightly tests failed — ${summary.slice(0, 60)}`);
+
+      - name: Create Issue
+        id: create_issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `${{ steps.issue_body.outputs.title }}`,
+              body: `${{ steps.issue_body.outputs.body }}`,
+              labels: ["muraqib", "auto-fix-needed"],
+            });
+            core.setOutput("issue_url", issue.data.html_url);
+
+      - name: Send failure notification via Resend
+        if: env.RESEND_API_KEY != ''
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ISSUE_URL: ${{ steps.create_issue.outputs.issue_url }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ inputs.run_id }}
+        run: |
+          curl -s -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"from\": \"muraqib@yourdomain.com\",
+              \"to\": \"you@yourdomain.com\",
+              \"subject\": \"[Muraqib] Nightly tests failed\",
+              \"html\": \"<h2>Muraqib: tests failed</h2><p><strong>${{ inputs.summary }}</strong></p><p>Claude is automatically investigating via GitHub Issue.</p><ul><li>Issue: <a href='$ISSUE_URL'>$ISSUE_URL</a></li><li>Run log: <a href='$RUN_URL'>$RUN_URL</a></li></ul><p>Claude will open a PR within ~5 min. Review in GitHub if needed.</p>\"
+            }"
