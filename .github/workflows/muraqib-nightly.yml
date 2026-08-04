@@ -23,6 +23,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # actions: write is nodig voor de "Trigger Claude fix on failure"-stap hieronder, die een
+    # workflow_dispatch aanroept op muraqib-claude-fix.yml — zonder dit faalt die stap met
+    # "Resource not accessible by integration" als het repo-brede standaard-token read-only is.
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
