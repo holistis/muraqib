@@ -1,0 +1,56 @@
+# Muraqib Auto-Merge Guard
+#
+# A second, code-based line of defense behind the "never auto-merge
+# payment/auth/migration/secrets changes" instruction already given to
+# Claude in muraqib-claude-fix.yml. That instruction is text a model reads
+# and could misjudge; this check inspects the actual changed files on any
+# PR that has auto-merge enabled, and forcibly disables it if a sensitive
+# path is touched, independent of what the PR author (human or Claude)
+# decided.
+#
+# Customize which paths count as sensitive via the MURAQIB_SENSITIVE_PATHS
+# repo variable (Settings > Secrets and variables > Actions > Variables tab),
+# a single case-insensitive regex, e.g.:
+#   (migrations?|schema)/|stripe|billing|\.env($|\.)
+# Falls back to a generic default covering common payment/auth/migration/
+# secrets naming if the variable is unset.
+
+name: Muraqib Auto-Merge Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, auto_merge_enabled, ready_for_review]
+
+jobs:
+  guard:
+    if: github.event.pull_request.auto_merge != null
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files against the sensitive-paths guard
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SENSITIVE_PATTERN: ${{ vars.MURAQIB_SENSITIVE_PATHS }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          pattern="${SENSITIVE_PATTERN:-(^|/)(migrations?|schema)(/|\.)|stripe|payment|billing|\.env($|\.)|secrets?[._-]|_core/index\.ts}"
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$changed"
+          echo "Guard pattern: $pattern"
+          if echo "$changed" | grep -qEi "$pattern"; then
+            echo "::error::Sensitive path matched — disabling auto-merge on PR #$PR_NUMBER."
+            gh pr merge "$PR_NUMBER" --disable-auto --repo "$GITHUB_REPOSITORY" || true
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Auto-merge disabled automatically by the Muraqib Auto-Merge Guard: this PR touches a path matching the sensitive-paths pattern (payment/auth/migration/schema/secrets by default). Manual review required before merging." || true
+            exit 1
+          fi
+          echo "No sensitive paths touched — auto-merge guard passes."

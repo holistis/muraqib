@@ -20,8 +20,9 @@ A Playwright test failure message can, in principle, contain text influenced by 
 
 `claudeIntegration.autoMerge` defaults to `false`. If you turn it on:
 
-- It only applies to PRs that don't touch payment, auth, database-migration, or secrets-handling code — the fix prompt instructs Claude to leave those for manual review regardless of the setting, and to say so explicitly in the PR body.
-- Turning it on without branch protection and required status checks on `main` is not a safety net, it's skipping review. Set those up first.
+- The fix prompt instructs Claude to leave payment, auth, database-migration, and secrets-handling changes for manual review regardless of the setting, and to say so explicitly in the PR body. That's a text instruction a model reads — useful, but not a hard guarantee.
+- `.github/workflows/auto-merge-guard.yml` is the second, code-based line of defense: it runs on any PR that has auto-merge enabled, checks the actual changed file paths against a regex (customizable via the `MURAQIB_SENSITIVE_PATHS` repo variable), and forcibly disables auto-merge if it matches, independent of what the PR author decided. It errs toward false positives on purpose — a harmless file that happens to be named after a sensitive topic (`tests/payment-flow.spec.ts`) still gets flagged, because a few minutes of manual review costs less than missing a real one.
+- Turning auto-merge on without branch protection and required status checks on `main` is not a safety net, it's skipping review. Set those up first.
 - CI passing means the fix didn't break the tests it can see, not that the fix is correct. Auto-merge is a convenience for low-stakes flows (a stale selector, a copy change), not a substitute for occasionally reading what Claude actually did.
 
 ## If you find something
@@ -30,4 +31,5 @@ Open an issue, or if it's sensitive, email the address in the repo owner's GitHu
 
 ## Changelog of security-relevant fixes
 
-- **2026-08-28** — Fixed GitHub Actions script injection (CWE-94) in `muraqib-claude-fix.yml`: failure text and workflow inputs were spliced via `${{ }}` directly into JS template literals and a bash string. Fixed via `env:` + `process.env` / `jq -n`. Also fixed a pre-existing invalid-YAML bug in the same file (a raw, unindented multi-line template literal broke the surrounding YAML block scalar) that meant the auto-fix mechanism could never successfully run, and added the `actions:write` permission the nightly job's dispatch call needs (closes #1). `autoMerge` now defaults to `false`.
+- **2026-08-28** — Fixed GitHub Actions script injection (CWE-94) in `muraqib-claude-fix.yml`: failure text and workflow inputs were spliced via `${{ }}` directly into JS template literals and a bash string. Fixed via `env:` + `process.env` / `jq -n`. Also fixed a pre-existing invalid-YAML bug in the same file (a raw, unindented multi-line template literal broke the surrounding YAML block scalar) that meant the auto-fix mechanism could never successfully run, and added the `actions:write` permission the nightly job's dispatch call needs (closes #1). `autoMerge` now defaults to `false`. Separately, the auto-fix issue's "Failed tests" section was always empty (Playwright nests an extra `suites` layer per `test.describe()` that the extraction missed) — fixed and verified with a reproduction.
+- **2026-08-29** — Added `auto-merge-guard.yml`: a code-based check, independent of the fix prompt's text instructions, that inspects the actual changed files on any PR with auto-merge enabled and disables it if a sensitive path is touched.
