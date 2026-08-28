@@ -59,8 +59,23 @@ test("a bare secrets/ directory is flagged, not just secrets.* files", () => {
   // The original pattern (secrets?[._-]) required "secrets" to be followed
   // immediately by ".", "_" or "-" — a plain directory boundary ("/") slid
   // through undetected. Verified against the real API shape before fixing.
-  for (const file of ["k8s/secrets/prod.yaml", "infra/secrets/README.md", "secrets/api-key.txt"]) {
+  for (const file of ["k8s/secrets/prod.yaml", "infra/secrets/README.md", "secrets/api-key.txt", "SECRETS", "server/lib/secrets.ts"]) {
     assert.equal(evaluate(undefined, [file]).block, true, `expected a block for ${file}`);
+  }
+});
+
+test("'secrets' must be a whole path segment, not a bare substring", () => {
+  // Fixing the right-hand boundary (above) left the left-hand side open:
+  // "secrets?(/|[._-]|$)" alone still matched "notsecrets.txt", because
+  // nothing required a boundary BEFORE "secrets". A harmless file merely
+  // containing the word still triggers manual review rather than a real
+  // bypass (fails toward caution, not away from it) but it's needless
+  // review overhead worth closing now that it's found.
+  for (const file of ["notsecrets.txt", "topsecretsauce.md"]) {
+    assert.equal(evaluate(undefined, [file]).block, false, `expected no match for ${file}`);
+  }
+  for (const file of ["my-secrets-vault.txt", "config.secrets.yaml"]) {
+    assert.equal(evaluate(undefined, [file]).block, true, `expected a match for ${file}`);
   }
 });
 

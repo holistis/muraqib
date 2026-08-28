@@ -24,7 +24,7 @@
  */
 
 const DEFAULT_PATTERN_SOURCE =
-  "(^|/)(migrations?|schema)(/|\\.)|stripe|payment|billing|\\.env($|\\.)|secrets?(/|[._-]|$)|auth|_core/index\\.ts|(^|/)\\.github/";
+  "(^|/)(migrations?|schema)(/|\\.)|stripe|payment|billing|\\.env($|\\.)|(^|[/._-])secrets?(/|[._-]|$)|auth|_core/index\\.ts|(^|/)\\.github/";
 
 /**
  * Compiles the sensitive-path pattern. Returns { regex, error }. On a bad
