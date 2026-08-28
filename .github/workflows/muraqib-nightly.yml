@@ -1,7 +1,8 @@
 # Muraqib Nightly Test Runner
 #
-# Copy to .github/workflows/muraqib-nightly.yml in your project.
-# Runs every night at 02:00 UTC (adjust cron to your timezone).
+# Already wired up — edit muraqib.config.ts, not this file, to point it at
+# your project (baseUrl, flows, alerting). Runs every night at 02:00 UTC
+# (adjust the cron below for your timezone).
 #
 # Required secrets:
 #   RESEND_API_KEY   — for email alerts (get one at resend.com, free tier works)
@@ -23,6 +24,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # actions:write is required for the createWorkflowDispatch() call below —
+    # without this explicit grant it 403s on any repo where the default
+    # GITHUB_TOKEN permissions are read-only (GitHub's newer repo default).
+    permissions:
+      actions: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +49,12 @@ jobs:
         env:
           QA_BASE_URL: ${{ secrets.QA_BASE_URL || vars.QA_BASE_URL }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: npx playwright test --reporter=json,list || echo "tests_failed=true" >> $GITHUB_OUTPUT
+        # No --reporter flag here: it overrides playwright.config.ts's reporter
+        # array wholesale, and the CLI-provided "json" reporter has no outputFile,
+        # so it writes to stdout instead of test-results/results.json — meaning
+        # the artifact upload below finds nothing and the fix workflow's failure
+        # details are always empty. Let the config's reporter list run as-is.
+        run: npx playwright test || echo "tests_failed=true" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Upload Playwright report
