@@ -67,12 +67,30 @@ jobs:
             if (fs.existsSync(jsonPath)) {
               try {
                 const data = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-                const failed = (data.suites || []).flatMap(s => (s.specs || []).flatMap(sp => sp.tests || []))
-                  .filter(t => (t.results || []).some(r => r.status === "failed"));
-                failureDetails = failed.slice(0, 5).map(t => {
-                  const r = (t.results || []).find(r => r.status === "failed") || {};
-                  const err = (r.error?.message || "(no message)").slice(0, 800);
-                  return `### ${t.title || "Unknown test"}\n\n\`\`\`\n${err}\n\`\`\`\n`;
+                // Playwright nests an extra suites layer per test.describe(), and the
+                // title lives on the spec, not the test object. A flat one-level
+                // flatMap misses every test inside a describe() and always produces
+                // "Unknown test" — walk recursively instead.
+                const failed = [];
+                function walkSuite(suite) {
+                  for (const spec of suite.specs || []) {
+                    for (const test of spec.tests || []) {
+                      if ((test.results || []).some(r => r.status === "failed" || r.status === "unexpected")) {
+                        failed.push({ title: spec.title, test });
+                      }
+                    }
+                  }
+                  for (const child of suite.suites || []) walkSuite(child);
+                }
+                (data.suites || []).forEach(walkSuite);
+                failureDetails = failed.slice(0, 5).map(({ title, test }) => {
+                  const r = (test.results || []).find(r => r.status === "failed" || r.status === "unexpected") || {};
+                  const err = (r.error?.message || "(no message)").slice(0, 800)
+                    // A triple-backtick run inside the error text would break out of
+                    // the code fence below and let text after it render as if it
+                    // were part of the prompt instead of error output — neutralize.
+                    .replace(/`{3,}/g, "'''");
+                  return `### ${title || "Unknown test"}\n\n\`\`\`\n${err}\n\`\`\`\n`;
                 }).join("\n---\n");
               } catch (e) {
                 failureDetails = `(could not parse results.json: ${e.message})`;
