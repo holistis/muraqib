@@ -9,7 +9,7 @@
  * (a backtick, `${...}`, a quote, `$(...)`) inside the resolved value can
  * break out of the surrounding string and execute as code, with whatever
  * permissions that step's token has (CWE-94). This exact bug shipped in this
- * repo's first commit — this check exists so it can't come back unnoticed,
+ * repo's first commit. This check exists so it can't come back unnoticed,
  * including from a future AI-assisted edit.
  *
  * Run: node scripts/check-no-expression-splicing.mjs
@@ -66,7 +66,7 @@ export function findExpressionSplices(content, label = "<inline>") {
 }
 
 function main() {
-  // Resolve relative to this script's own location, not process.cwd() — a
+  // Resolve relative to this script's own location, not process.cwd(). A
   // check that silently scans zero files and still prints "OK" is worse than
   // no check at all, and cwd-dependence is exactly how that happens (e.g. run
   // from scripts/ instead of the repo root, or from a monorepo subpackage).
@@ -108,13 +108,13 @@ function main() {
   }
 
   if (filesScanned === 0) {
-    console.error(`FAILED: found 0 workflow files to check in ${WORKFLOWS_DIRS.join(", ")} (resolved against ${repoRoot}). A check that scans nothing and reports OK is worse than no check — fix the path or the invocation.`);
+    console.error(`FAILED: found 0 workflow files to check in ${WORKFLOWS_DIRS.join(", ")} (resolved against ${repoRoot}). A check that scans nothing and reports OK is worse than no check. Fix the path or the invocation.`);
     process.exit(1);
   }
 
   if (parseErrorCount > 0 || injectionCount > 0) {
-    if (parseErrorCount > 0) console.error(`\n${parseErrorCount} file(s) failed to parse as YAML — fix the syntax error(s) above.`);
-    if (injectionCount > 0) console.error(`\n${injectionCount} workflow step(s) splice a GitHub expression directly into a script/run body — see fix(es) above.`);
+    if (parseErrorCount > 0) console.error(`\n${parseErrorCount} file(s) failed to parse as YAML. Fix the syntax error(s) above.`);
+    if (injectionCount > 0) console.error(`\n${injectionCount} workflow step(s) splice a GitHub expression directly into a script/run body. See fix(es) above.`);
     process.exit(1);
   }
 
@@ -122,7 +122,7 @@ function main() {
 }
 
 // Only run as a CLI when invoked directly, not when imported by the test suite.
-// pathToFileURL handles both relative and absolute argv[1] correctly — the
+// pathToFileURL handles both relative and absolute argv[1] correctly. The
 // naive `file://${process.argv[1]}` string-concat this replaced silently
 // never matched (argv[1] is often relative, e.g. "scripts/check-...mjs"),
 // so main() never ran and the script exited 0 having checked nothing.

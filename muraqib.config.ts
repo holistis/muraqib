@@ -1,5 +1,5 @@
 /**
- * muraqib.config.ts — the only file you need to adapt per project.
+ * muraqib.config.ts, the only file you need to adapt per project.
  *
  * Setup:
  *   1. Set baseUrl to your live app URL
@@ -14,7 +14,7 @@ import { config as loadDotenv } from "dotenv";
 loadDotenv();
 
 export interface FlowSpec {
-  /** Unique name — used in reports and Claude's fix context */
+  /** Unique name, used in reports and Claude's fix context */
   name: string;
   /** Spec filename in tests/ (without .spec.ts) */
   file: string;
@@ -39,7 +39,7 @@ export interface MuraqibConfig {
     /**
      * true = Claude's PR auto-merges when CI is green, no human review.
      * Only turn this on once you also have branch protection + required
-     * status checks on main (see README "Auto-merge" section) — CI passing
+     * status checks on main (see README "Auto-merge" section), CI passing
      * is not the same as the fix being correct. Default is false on purpose.
      */
     autoMerge: boolean;
@@ -60,7 +60,7 @@ const config: MuraqibConfig = {
       name: "auth",
       file: "auth",
       critical: true,
-      description: "Login flow — user lands on dashboard after sign in.",
+      description: "Login flow, user lands on dashboard after sign in.",
     },
     {
       name: "public-pages",

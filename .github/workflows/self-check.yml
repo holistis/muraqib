@@ -2,7 +2,7 @@
 #
 # Runs on every push/PR to this repo. Fails the build if any workflow step
 # splices a GitHub Actions expression (${{ }}) directly into a script/run
-# body instead of passing it through env: — the exact class of bug that
+# body instead of passing it through env:. That is the exact class of bug that
 # shipped in this repo's first commit (see SECURITY.md).
 
 name: Muraqib Self-Check

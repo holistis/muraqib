@@ -1,5 +1,5 @@
 /**
- * Playwright config — reads from muraqib.config.ts, no changes needed here.
+ * Playwright config, reads from muraqib.config.ts, no changes needed here.
  */
 
 import { defineConfig, devices } from "@playwright/test";
