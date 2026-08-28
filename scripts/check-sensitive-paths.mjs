@@ -24,7 +24,7 @@
  */
 
 const DEFAULT_PATTERN_SOURCE =
-  "(^|/)(migrations?|schema)(/|\\.)|stripe|payment|billing|\\.env($|\\.)|secrets?[._-]|auth|_core/index\\.ts|(^|/)\\.github/";
+  "(^|/)(migrations?|schema)(/|\\.)|stripe|payment|billing|\\.env($|\\.)|secrets?(/|[._-]|$)|auth|_core/index\\.ts|(^|/)\\.github/";
 
 /**
  * Compiles the sensitive-path pattern. Returns { regex, error }. On a bad
@@ -71,6 +71,45 @@ export function evaluate(patternSource, changedFiles) {
   return { block: false, reason: "No sensitive paths touched.", matches: [] };
 }
 
+/**
+ * Parses the raw stdout of `gh api ... --paginate` (deliberately WITHOUT
+ * --jq). A prior version added `--jq "[.[].filename]"` to that call, which
+ * broke on any response spanning more than one page: gh applies --jq
+ * per-page before merging, so a multi-page response becomes several
+ * concatenated JSON array literals ("[...][...]"), not one valid document
+ * — JSON.parse throws, and the whole script (including the part that would
+ * disable auto-merge) crashes before ever evaluating the PR. Reproduced
+ * against real large PRs before fixing.
+ *
+ * Without --jq, gh's own pagination logic merges multi-page array
+ * responses into a single array — but this still defensively flattens in
+ * case a future gh version, or an endpoint that behaves differently,
+ * returns one array per page instead. Better to handle both shapes than
+ * to reintroduce the same class of crash somewhere else.
+ */
+export function parsePaginatedArrayOutput(rawOutput) {
+  let parsed = JSON.parse(rawOutput);
+  if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
+    parsed = parsed.flat();
+  }
+  return parsed;
+}
+
+/**
+ * Extracts every path worth checking from the GitHub "list PR files" API
+ * response: the current filename, and for a renamed file, the path it was
+ * renamed FROM too — a rename with no content change would otherwise never
+ * appear under its old, possibly-sensitive name.
+ */
+export function extractCheckablePaths(prFilesApiResponse) {
+  const paths = [];
+  for (const file of prFilesApiResponse) {
+    if (file.filename) paths.push(file.filename);
+    if (file.previous_filename) paths.push(file.previous_filename);
+  }
+  return paths;
+}
+
 async function main() {
   const { execFileSync } = await import("node:child_process");
 
@@ -84,11 +123,12 @@ async function main() {
   // Changed files via the API, not `git diff` on a checked-out ref — this
   // script runs under pull_request_target specifically so it never needs
   // to check out or execute anything from the PR's own (untrusted) branch.
-  const filesJson = execFileSync("gh", ["api", `repos/${repo}/pulls/${prNumber}/files`, "--paginate", "--jq", "[.[].filename]"], {
+  const rawOutput = execFileSync("gh", ["api", `repos/${repo}/pulls/${prNumber}/files`, "--paginate"], {
     encoding: "utf8",
   });
-  const changedFiles = JSON.parse(filesJson);
-  console.log(`Changed files (${changedFiles.length}):`);
+  const prFiles = parsePaginatedArrayOutput(rawOutput);
+  const changedFiles = extractCheckablePaths(prFiles);
+  console.log(`Changed files (${changedFiles.length}, including pre-rename names):`);
   changedFiles.forEach(f => console.log(`  ${f}`));
 
   const result = evaluate(process.env.MURAQIB_SENSITIVE_PATHS, changedFiles);
@@ -106,10 +146,17 @@ async function main() {
   const MARKER = "<!-- muraqib-auto-merge-guard -->";
   let alreadyCommented = false;
   try {
-    const commentsJson = execFileSync("gh", ["api", `repos/${repo}/issues/${prNumber}/comments`, "--paginate", "--jq", "[.[].body]"], {
+    // Same --paginate-without--jq reasoning as the files fetch above — a PR
+    // with many prior comments would otherwise crash this lookup, which
+    // was already caught by the surrounding try/catch, but "silently
+    // defaults to re-commenting" is a worse failure mode than "correctly
+    // finds the existing comment," so fix the root cause instead of
+    // relying on the fallback.
+    const rawComments = execFileSync("gh", ["api", `repos/${repo}/issues/${prNumber}/comments`, "--paginate"], {
       encoding: "utf8",
     });
-    alreadyCommented = JSON.parse(commentsJson).some(body => body.includes(MARKER));
+    const comments = parsePaginatedArrayOutput(rawComments);
+    alreadyCommented = comments.some(c => (c.body || "").includes(MARKER));
   } catch {
     // If we can't check, err toward commenting once rather than staying silent.
   }
