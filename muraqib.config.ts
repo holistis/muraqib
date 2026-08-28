@@ -36,7 +36,12 @@ export interface MuraqibConfig {
   };
   claudeIntegration: {
     autoOpenPR: boolean;
-    /** true = Claude's PR auto-merges when CI is green. Owner does nothing. */
+    /**
+     * true = Claude's PR auto-merges when CI is green, no human review.
+     * Only turn this on once you also have branch protection + required
+     * status checks on main (see README "Auto-merge" section) — CI passing
+     * is not the same as the fix being correct. Default is false on purpose.
+     */
     autoMerge: boolean;
     apiKeyEnv?: string;
   };
@@ -79,7 +84,7 @@ const config: MuraqibConfig = {
 
   claudeIntegration: {
     autoOpenPR: true,
-    autoMerge: true,
+    autoMerge: false, // turn on only after reading the README's "Auto-merge" section
     apiKeyEnv: "ANTHROPIC_API_KEY",
   },
 

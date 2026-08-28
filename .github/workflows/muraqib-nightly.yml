@@ -23,6 +23,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # actions:write is required for the createWorkflowDispatch() call below —
+    # without this explicit grant it 403s on any repo where the default
+    # GITHUB_TOKEN permissions are read-only (GitHub's newer repo default).
+    permissions:
+      actions: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
