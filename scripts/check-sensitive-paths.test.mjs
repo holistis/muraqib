@@ -29,7 +29,7 @@ test("empty diff (no-op PR) passes, not an error", () => {
 });
 
 test("a custom pattern that is invalid regex syntax fails CLOSED, not open", () => {
-  // Unbalanced paren — this exact style of hand-written mistake is what a
+  // Unbalanced paren: this exact style of hand-written mistake is what a
   // grep -E invocation could silently swallow as "matches nothing" instead
   // of erroring; here it must be treated as a block regardless of the file list.
   const result = evaluate("stripe|payment(", ["totally-unrelated-file.md"]);
@@ -57,7 +57,7 @@ test("matching is case-insensitive", () => {
 
 test("a bare secrets/ directory is flagged, not just secrets.* files", () => {
   // The original pattern (secrets?[._-]) required "secrets" to be followed
-  // immediately by ".", "_" or "-" — a plain directory boundary ("/") slid
+  // immediately by ".", "_" or "-": a plain directory boundary ("/") slid
   // through undetected. Verified against the real API shape before fixing.
   for (const file of ["k8s/secrets/prod.yaml", "infra/secrets/README.md", "secrets/api-key.txt", "SECRETS", "server/lib/secrets.ts"]) {
     assert.equal(evaluate(undefined, [file]).block, true, `expected a block for ${file}`);
@@ -87,7 +87,7 @@ test("parsePaginatedArrayOutput: single-page gh --paginate output (the normal ca
 test("parsePaginatedArrayOutput: defensively flattens an array-of-page-arrays, in case a future gh version ever emits one", () => {
   // This is the shape that a `--jq` filter applied per-page used to produce
   // (each page's filtered result is valid JSON on its own, but the
-  // concatenation of several isn't) — the fix removes --jq entirely, but
+  // concatenation of several isn't). The fix removes --jq entirely, but
   // this defensive flatten means a similarly-shaped response from any
   // other source still parses instead of throwing.
   const raw = JSON.stringify([[{ filename: "a.ts" }], [{ filename: "b.ts" }]]);
@@ -95,8 +95,8 @@ test("parsePaginatedArrayOutput: defensively flattens an array-of-page-arrays, i
 });
 
 test("parsePaginatedArrayOutput throws (not silently returns []) on genuinely malformed JSON", () => {
-  // A crash here still exits main() non-zero, which — on a repo that has
-  // correctly configured this guard as a required status check — still
+  // A crash here still exits main() non-zero, which, on a repo that has
+  // correctly configured this guard as a required status check, still
   // blocks the merge as a failed check, just without a clear reason. Not
   // ideal, but not a silent fail-open either. Documented, not hidden.
   assert.throws(() => parsePaginatedArrayOutput("[{ not valid json"));

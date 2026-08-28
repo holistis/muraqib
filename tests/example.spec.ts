@@ -1,5 +1,5 @@
 /**
- * Example test — replace with tests for your own app.
+ * Example test, replace with tests for your own app.
  *
  * Naming convention: one file per flow, matching the flow name in muraqib.config.ts.
  * Use data-testid attributes where possible (stable under refactors).

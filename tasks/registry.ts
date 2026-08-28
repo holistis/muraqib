@@ -9,7 +9,7 @@
  * task-runner.ts never needs to change.
  *
  * Philosophy:
- *   Tasks are ALWAYS handwritten — never AI-generated at runtime.
+ *   Tasks are ALWAYS handwritten, never AI-generated at runtime.
  *   Writing a new handler is a one-time Claude Code session.
  *   Running it costs 0 tokens, 0 dollars.
  */
@@ -44,7 +44,7 @@ function requireArg(args: Record<string, string>, key: string): string {
  * See tasks/example-task.ts for a minimal template.
  */
 export const tasks: TaskDef[] = [
-  // Example browser task — replace with your own
+  // Example browser task, replace with your own
   // {
   //   name: "post-linkedin",
   //   summary: "Post text (+ optional image) to LinkedIn.",
@@ -56,7 +56,7 @@ export const tasks: TaskDef[] = [
   //   run: (args, page) => linkedinPost(page!, { text: requireArg(args, "text"), imageUrl: args.imageUrl }),
   // },
 
-  // Example CLI task — replace with your own
+  // Example CLI task, replace with your own
   // {
   //   name: "set-env",
   //   summary: "Set an environment variable on your hosting provider.",

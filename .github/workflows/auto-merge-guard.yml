@@ -10,26 +10,26 @@
 #
 # Uses pull_request_target, NOT pull_request. On a plain `pull_request`
 # trigger, GitHub reads the workflow *definition* from the PR branch's own
-# merge of head+base — meaning a PR that weakens this guard (empties the
+# merge of head+base, meaning a PR that weakens this guard (empties the
 # pattern, disables the job) and touches a sensitive path in the same diff
 # would be checked against its own already-weakened copy of the rules,
 # defeating the entire point. `pull_request_target` always reads the
 # workflow from the base branch, which the PR cannot alter. Because of
 # that, this workflow must never check out or execute anything from the
-# PR's own ref — it only calls the GitHub API for a list of changed
+# PR's own ref, it only calls the GitHub API for a list of changed
 # filenames (see scripts/check-sensitive-paths.mjs), never `git diff`
 # against a checked-out PR head.
 #
 # REQUIRED SETUP beyond this file: add "Muraqib Auto-Merge Guard / guard"
 # as a required status check in this repo's branch protection rules for
 # main. Without that, this job runs asynchronously and GitHub's native
-# auto-merge can complete before it does — a required status check is the
+# auto-merge can complete before it does, a required status check is the
 # only way to make GitHub wait for this job's result before merging.
 #
 # Customize which paths count as sensitive via the MURAQIB_SENSITIVE_PATHS
 # repo variable (Settings > Secrets and variables > Actions > Variables
 # tab), a single case-insensitive regex. An invalid pattern fails CLOSED
-# (treated as a match) rather than silently checking nothing — see
+# (treated as a match) rather than silently checking nothing, see
 # scripts/check-sensitive-paths.mjs.
 
 name: Muraqib Auto-Merge Guard
@@ -47,7 +47,7 @@ jobs:
       contents: read
     steps:
       # Default checkout ref for pull_request_target is the BASE branch,
-      # not the PR head — this is what keeps the guard's own code trusted.
+      # not the PR head, this is what keeps the guard's own code trusted.
       - uses: actions/checkout@v4
 
       - name: Check changed files against the sensitive-paths guard
