@@ -52,10 +52,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            // Values come in via env, never spliced with ${{ }} into this script
-            // block — otherwise a backtick or ${...} in untrusted text breaks out
-            // of the string and runs as code with this workflow's write token
-            // (CWE-94, GitHub Actions script injection).
+            // Values come in via env, never spliced as a raw GitHub expression
+            // into this script block — otherwise a backtick or ${...} in
+            // untrusted text breaks out of the string and runs as code with
+            // this workflow's write token (CWE-94, GitHub Actions script
+            // injection). Note for future editors: don't write the literal
+            // double-brace expression syntax in a comment either — GitHub's
+            // workflow parser evaluates it anywhere in this file, even here.
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${process.env.MURAQIB_RUN_ID}`;
             const summary = process.env.MURAQIB_SUMMARY || "Unknown failure";
 
@@ -134,8 +137,9 @@ jobs:
         with:
           script: |
             // Same reason as "Build issue body": title/body contain up to 5x800
-            // chars of raw test failure text and must never be spliced via ${{ }}
-            // into this script block. env + process.env keeps it a literal string.
+            // chars of raw test failure text and must never be spliced as a raw
+            // GitHub expression into this script block. env + process.env keeps
+            // it a literal string instead.
             const issue = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -153,8 +157,8 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ inputs.run_id }}
           MURAQIB_SUMMARY: ${{ inputs.summary }}
         run: |
-          # MURAQIB_SUMMARY comes in as an env var, never spliced via ${{ }} into
-          # this bash string — otherwise a quote or $(...) in the value could break
+          # MURAQIB_SUMMARY comes in as an env var, never spliced as a raw GitHub
+          # expression into this bash string — otherwise a quote or $(...) in the value could break
           # out of the JSON body and run arbitrary shell commands with RESEND_API_KEY
           # in scope. jq -n builds the JSON safely regardless of what it contains.
           payload=$(jq -n \
