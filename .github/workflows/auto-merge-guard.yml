@@ -8,17 +8,34 @@
 # path is touched, independent of what the PR author (human or Claude)
 # decided.
 #
+# Uses pull_request_target, NOT pull_request. On a plain `pull_request`
+# trigger, GitHub reads the workflow *definition* from the PR branch's own
+# merge of head+base — meaning a PR that weakens this guard (empties the
+# pattern, disables the job) and touches a sensitive path in the same diff
+# would be checked against its own already-weakened copy of the rules,
+# defeating the entire point. `pull_request_target` always reads the
+# workflow from the base branch, which the PR cannot alter. Because of
+# that, this workflow must never check out or execute anything from the
+# PR's own ref — it only calls the GitHub API for a list of changed
+# filenames (see scripts/check-sensitive-paths.mjs), never `git diff`
+# against a checked-out PR head.
+#
+# REQUIRED SETUP beyond this file: add "Muraqib Auto-Merge Guard / guard"
+# as a required status check in this repo's branch protection rules for
+# main. Without that, this job runs asynchronously and GitHub's native
+# auto-merge can complete before it does — a required status check is the
+# only way to make GitHub wait for this job's result before merging.
+#
 # Customize which paths count as sensitive via the MURAQIB_SENSITIVE_PATHS
-# repo variable (Settings > Secrets and variables > Actions > Variables tab),
-# a single case-insensitive regex, e.g.:
-#   (migrations?|schema)/|stripe|billing|\.env($|\.)
-# Falls back to a generic default covering common payment/auth/migration/
-# secrets naming if the variable is unset.
+# repo variable (Settings > Secrets and variables > Actions > Variables
+# tab), a single case-insensitive regex. An invalid pattern fails CLOSED
+# (treated as a match) rather than silently checking nothing — see
+# scripts/check-sensitive-paths.mjs.
 
 name: Muraqib Auto-Merge Guard
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, auto_merge_enabled, ready_for_review]
 
 jobs:
@@ -29,28 +46,13 @@ jobs:
       pull-requests: write
       contents: read
     steps:
+      # Default checkout ref for pull_request_target is the BASE branch,
+      # not the PR head — this is what keeps the guard's own code trusted.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Check changed files against the sensitive-paths guard
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          SENSITIVE_PATTERN: ${{ vars.MURAQIB_SENSITIVE_PATHS }}
+          MURAQIB_SENSITIVE_PATHS: ${{ vars.MURAQIB_SENSITIVE_PATHS }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          pattern="${SENSITIVE_PATTERN:-(^|/)(migrations?|schema)(/|\.)|stripe|payment|billing|\.env($|\.)|secrets?[._-]|_core/index\.ts}"
-          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          echo "Changed files:"
-          echo "$changed"
-          echo "Guard pattern: $pattern"
-          if echo "$changed" | grep -qEi "$pattern"; then
-            echo "::error::Sensitive path matched — disabling auto-merge on PR #$PR_NUMBER."
-            gh pr merge "$PR_NUMBER" --disable-auto --repo "$GITHUB_REPOSITORY" || true
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Auto-merge disabled automatically by the Muraqib Auto-Merge Guard: this PR touches a path matching the sensitive-paths pattern (payment/auth/migration/schema/secrets by default). Manual review required before merging." || true
-            exit 1
-          fi
-          echo "No sensitive paths touched — auto-merge guard passes."
+        run: node scripts/check-sensitive-paths.mjs

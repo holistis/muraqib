@@ -50,7 +50,12 @@ Nightly (2am) → Playwright runs all tests against production
 
 Default is off. Claude opens a PR, CI runs against it, and it waits for you to review and merge — same as any other PR. This is deliberate: CI passing means the fix didn't break the tests it can see, not that the fix is correct.
 
-If you turn `autoMerge` on, it only takes effect for PRs that don't touch anything payment-, auth-, database-migration-, or secrets-related — the Claude fix prompt is instructed to leave those for manual review regardless of the setting. Turning it on also requires branch protection with required status checks on `main`; auto-merge without that is not a safety net, it's just skipping review.
+If you turn `autoMerge` on, two independent things keep it from touching payment/auth/migration/secrets code:
+
+1. The Claude fix prompt is instructed to leave those for manual review regardless of the setting — a text instruction a model reads.
+2. `.github/workflows/auto-merge-guard.yml` checks the actual changed files on any PR with auto-merge enabled and force-disables it if a sensitive path matches — code, not a prompt.
+
+Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge Guard / guard"** as a required status check in this repo's branch protection rules for `main`. Without that, the guard still runs and will disable auto-merge and comment if it catches something, but GitHub's native auto-merge can complete before the guard job does — a required status check is what makes GitHub wait for it. Auto-merge without both the guard and that setting is not a safety net, it's just skipping review.
 
 ## Design principles
 
