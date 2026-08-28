@@ -5,7 +5,8 @@
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
-    "task": "ts-node task-runner.ts"
+    "task": "ts-node task-runner.ts",
+    "check:workflows": "node scripts/check-no-expression-splicing.mjs"
   },
   "dependencies": {
     "@playwright/test": "^1.44.0",
@@ -13,6 +14,7 @@
   },
   "devDependencies": {
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "yaml": "^2.5.0"
   }
 }
