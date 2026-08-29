@@ -26,6 +26,14 @@
 # auto-merge can complete before it does, a required status check is the
 # only way to make GitHub wait for this job's result before merging.
 #
+# The auto-merge check is done with an if: on individual STEPS, not on the
+# job itself. A job-level if: that evaluates to false makes the whole check
+# run report as "skipped", and GitHub's required-status-checks feature does
+# not treat a skipped check as satisfying the requirement, it leaves the PR
+# permanently blocked from merging even with no auto-merge involved at all.
+# Gating at the step level means the job always finishes with a real
+# success/failure conclusion, whether or not auto-merge is on.
+#
 # Customize which paths count as sensitive via the MURAQIB_SENSITIVE_PATHS
 # repo variable (Settings > Secrets and variables > Actions > Variables
 # tab), a single case-insensitive regex. An invalid pattern fails CLOSED
@@ -40,17 +48,22 @@ on:
 
 jobs:
   guard:
-    if: github.event.pull_request.auto_merge != null
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
       contents: read
     steps:
+      - name: Report no-op when auto-merge is not enabled
+        if: github.event.pull_request.auto_merge == null
+        run: echo "Auto-merge is not enabled on this PR, nothing to guard."
+
       # Default checkout ref for pull_request_target is the BASE branch,
       # not the PR head, this is what keeps the guard's own code trusted.
       - uses: actions/checkout@v4
+        if: github.event.pull_request.auto_merge != null
 
       - name: Check changed files against the sensitive-paths guard
+        if: github.event.pull_request.auto_merge != null
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           MURAQIB_SENSITIVE_PATHS: ${{ vars.MURAQIB_SENSITIVE_PATHS }}

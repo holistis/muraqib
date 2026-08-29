@@ -3,7 +3,10 @@
 # Runs on every push/PR to this repo. Fails the build if any workflow step
 # splices a GitHub Actions expression (${{ }}) directly into a script/run
 # body instead of passing it through env:. That is the exact class of bug that
-# shipped in this repo's first commit (see SECURITY.md).
+# shipped in this repo's first commit (see SECURITY.md). Also fails if the
+# auto-merge-guard job carries a job-level if:, which makes it report SKIPPED
+# instead of pass/fail and permanently blocks merging under required-status-
+# checks. That exact bug shipped on 2026-08-29 (see SECURITY.md).
 
 name: Muraqib Self-Check
 
@@ -23,3 +26,4 @@ jobs:
       - run: npm install
       - run: npm run test:scripts
       - run: npm run check:workflows
+      - run: npm run check:required-checks

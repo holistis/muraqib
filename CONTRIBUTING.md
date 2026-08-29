@@ -4,7 +4,7 @@ This is a solo-maintained project. Contributions are welcome, but keep these in 
 
 ## Before opening a PR
 
-- Run `npm run check:workflows` if you touch anything under `.github/workflows/`. It fails the build if a step splices a GitHub expression (`${{ }}`) directly into a script/run body instead of passing it through `env:`. See `SECURITY.md` for why that matters.
+- Run `npm run check:workflows` and `npm run check:required-checks` if you touch anything under `.github/workflows/`. The first fails the build on GitHub-expression script injection; the second fails it if a job that's (or could become) a required status check carries a job-level `if:`, which makes it report SKIPPED instead of pass/fail. See `SECURITY.md` for why both matter.
 - Keep the diff small and focused. One fix or one feature per PR.
 - If you add a new task handler under `tasks/`, add one entry to `tasks/registry.ts`, `task-runner.ts` should never need to change.
 
