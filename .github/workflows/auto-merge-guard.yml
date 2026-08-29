@@ -40,11 +40,18 @@
 # (treated as a match) rather than silently checking nothing, see
 # scripts/check-sensitive-paths.mjs.
 
+# auto_merge_disabled is included so a fresh check run fires the moment
+# auto-merge is turned off, instead of leaving the last (enabled-state) run
+# sitting in the Actions history. Purely a hygiene fix: the guard already
+# re-reads the actual auto_merge field on every run rather than trusting
+# which event fired, so a missing event type here couldn't let a sensitive
+# change slip through, it only left a stale-looking log entry.
+
 name: Muraqib Auto-Merge Guard
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, auto_merge_enabled, ready_for_review]
+    types: [opened, synchronize, reopened, auto_merge_enabled, auto_merge_disabled, ready_for_review]
 
 jobs:
   guard:
