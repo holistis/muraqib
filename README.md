@@ -57,6 +57,12 @@ If you turn `autoMerge` on, two independent things keep it from touching payment
 
 Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge Guard / guard"** as a required status check in your repo's branch protection rules for `main`. Without that, the guard still runs and will disable auto-merge and comment if it catches something, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait for it. Auto-merge without both the guard and that setting is not a safety net, it's just skipping review. This repo has that setting configured on `main` as of 2026-08-29; if you fork or clone this for your own project, you need to add it yourself.
 
+## How this compares to a hosted service like Octomind
+
+Octomind offered a similar idea (nightly AI-assisted QA) as a paid, hosted product starting around $89/month, and stopped taking new customers in April 2026. This project is not a hosted replacement for it, it is a different shape entirely: you clone it, it runs in your own GitHub Actions and your own Claude subscription, and there is no monthly bill because there is no service to bill for. The tradeoff is honest too, you set it up yourself (a config file, two secrets, your own test specs), instead of signing up and getting a dashboard.
+
+If you want a hosted, zero-setup product with support, this is not that. If you want the same core idea for $0 and are fine reading a README, this repo is free and MIT licensed, and its full defect history (below) is public, not a claim.
+
 ## Design principles
 
 - **Tasks are always handwritten**: no runtime AI generates or executes tasks. Writing a new handler is one-time Claude work. Running it costs 0 tokens.
