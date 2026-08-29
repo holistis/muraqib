@@ -1,0 +1,1 @@
+Throwaway file to test whether required-status-check merging works normally now. Will be deleted, this PR will be closed without merging, not landed on main.
