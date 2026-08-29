@@ -1,7 +1,13 @@
 {
   "name": "muraqib",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Zero-maintenance nightly QA for solo SaaS founders",
+  "license": "MIT",
+  "author": "Abdellah Ouadoudi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/holistis/muraqib.git"
+  },
   "scripts": {
     "test": "playwright test",
     "test:headed": "playwright test --headed",
