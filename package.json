@@ -13,6 +13,7 @@
     "test:headed": "playwright test --headed",
     "task": "ts-node task-runner.ts",
     "check:workflows": "node scripts/check-no-expression-splicing.mjs",
+    "check:required-checks": "node scripts/check-required-check-not-skippable.mjs",
     "test:scripts": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
