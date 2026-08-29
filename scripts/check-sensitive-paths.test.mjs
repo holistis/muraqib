@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluate, parsePaginatedArrayOutput, extractCheckablePaths } from "./check-sensitive-paths.mjs";
+import { evaluate, parsePaginatedArrayOutput, extractCheckablePaths, hasGuardLabel, notifyOncePerPR } from "./check-sensitive-paths.mjs";
 
 test("blocks on common sensitive paths, default pattern", () => {
   for (const file of [
@@ -125,4 +125,54 @@ test("end to end: a large (multi-page-shaped), partly-renamed file list is still
   const paths = extractCheckablePaths(prFiles);
   const result = evaluate(undefined, paths);
   assert.equal(result.block, true, "the renamed-from secrets.ts path must still trip the guard even 151 files into the list");
+});
+
+test("hasGuardLabel: true when the label is present among others", () => {
+  const labels = [{ name: "bug" }, { name: "muraqib-guard-blocked" }, { name: "needs-review" }];
+  assert.equal(hasGuardLabel(labels, "muraqib-guard-blocked"), true);
+});
+
+test("hasGuardLabel: false when the label is absent", () => {
+  const labels = [{ name: "bug" }, { name: "needs-review" }];
+  assert.equal(hasGuardLabel(labels, "muraqib-guard-blocked"), false);
+});
+
+test("hasGuardLabel: false on an empty label list, not a throw", () => {
+  assert.equal(hasGuardLabel([], "muraqib-guard-blocked"), false);
+});
+
+test("hasGuardLabel: tolerates a malformed entry (null/undefined) in the list without throwing", () => {
+  const labels = [null, { name: "muraqib-guard-blocked" }, undefined];
+  assert.equal(hasGuardLabel(labels, "muraqib-guard-blocked"), true);
+});
+
+test("notifyOncePerPR: calls postComment before addLabel, in that order", () => {
+  const calls = [];
+  notifyOncePerPR(
+    () => calls.push("comment"),
+    () => calls.push("label")
+  );
+  assert.deepEqual(calls, ["comment", "label"]);
+});
+
+test("notifyOncePerPR: if postComment throws, addLabel must never be called, and the throw propagates", () => {
+  let labelCalled = false;
+  assert.throws(() => {
+    notifyOncePerPR(
+      () => { throw new Error("comment API failed"); },
+      () => { labelCalled = true; }
+    );
+  }, /comment API failed/);
+  assert.equal(labelCalled, false, "addLabel must not run if postComment never completed, this is the exact bug adversarial review caught in an earlier ordering");
+});
+
+test("notifyOncePerPR: if addLabel throws, postComment has already succeeded and the throw does not propagate", () => {
+  let commentCalled = false;
+  assert.doesNotThrow(() => {
+    notifyOncePerPR(
+      () => { commentCalled = true; },
+      () => { throw new Error("label API failed"); }
+    );
+  });
+  assert.equal(commentCalled, true, "the comment (the actual notification) must have already run before the label attempt");
 });
