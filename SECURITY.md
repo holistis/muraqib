@@ -25,6 +25,14 @@ A Playwright test failure message can, in principle, contain text influenced by 
 - **This guard only actually blocks the merge if it's added as a required status check** on `main`'s branch protection rules (name: "Muraqib Auto-Merge Guard / guard"). Without that, it's a race: the guard runs asynchronously after the PR event, and GitHub's native auto-merge can complete before the guard job finishes, in which case the guard's `--disable-auto` call fails because there is nothing left to disable. It will say so in its log rather than falsely reporting success. Turning auto-merge on without both the guard *and* that required-status-check setting is not a safety net, it's just skipping review. This repo's own `main` branch has that required status check configured (since 2026-08-29). A fork or clone starts without it and needs to add it separately, GitHub does not carry branch protection rules across a fork.
 - CI passing means the fix didn't break the tests it can see, not that the fix is correct. Auto-merge is a convenience for low-stakes flows (a stale selector, a copy change), not a substitute for occasionally reading what Claude actually did.
 
+## Known limitation: every PR on this repo currently needs an admin merge
+
+Three unrelated third-party GitHub Apps installed on this account (Render, Railway, Claude) each register a check suite on every push here but never complete it (0 check runs, status stuck `queued` indefinitely). That is a property of those apps' own webhook handling for this repo, not something this project's workflows control. Once a required status check exists on `main` (see above), GitHub's mergeability computation reports the PR as `BLOCKED` regardless of whether the *required* check passed, because those other, unrelated check suites never resolve.
+
+GitHub has a repo-scoped fix for this (`PATCH /repos/{owner}/{repo}/check-suites/preferences`, disabling `auto_trigger_checks` per app for just this repo, without touching that app's real functionality or its access to other repos), but that endpoint rejects the OAuth-flow token this environment authenticates with, it needs a classic personal access token instead. Not yet applied.
+
+Until it is, merging a normal PR here needs `gh pr merge --admin` (safe: `enforce_admins` is `false`, and the required check itself, not this workaround, is still what actually gates a sensitive-path or auto-merge PR). A `BLOCKED` mergeStateStatus with the required check showing green is this issue, not a sign the guard is broken again.
+
 ## If you find something
 
 Open an issue, or if it's sensitive, email the address in the repo owner's GitHub profile. This is a solo-maintained tool, response time varies, but security reports get priority over everything else in the queue.
