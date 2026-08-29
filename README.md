@@ -55,7 +55,7 @@ If you turn `autoMerge` on, two independent things keep it from touching payment
 1. The Claude fix prompt is instructed to leave those for manual review regardless of the setting. That is a text instruction a model reads.
 2. `.github/workflows/auto-merge-guard.yml` checks the actual changed files on any PR with auto-merge enabled and force-disables it if a sensitive path matches. That is code, not a prompt.
 
-Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge Guard / guard"** as a required status check in this repo's branch protection rules for `main`. Without that, the guard still runs and will disable auto-merge and comment if it catches something, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait for it. Auto-merge without both the guard and that setting is not a safety net, it's just skipping review.
+Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge Guard / guard"** as a required status check in your repo's branch protection rules for `main`. Without that, the guard still runs and will disable auto-merge and comment if it catches something, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait for it. Auto-merge without both the guard and that setting is not a safety net, it's just skipping review. This repo has that setting configured on `main` as of 2026-08-29; if you fork or clone this for your own project, you need to add it yourself.
 
 ## Design principles
 
