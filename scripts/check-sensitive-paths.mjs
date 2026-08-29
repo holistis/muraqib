@@ -21,6 +21,28 @@
  * - This must run under `pull_request_target`, not `pull_request`, see
  *   the workflow file's own comment for why. This file has no opinion on
  *   that; it only computes a match, it doesn't decide how it's triggered.
+ * - Duplicate-notification dedup is a label, not a comment-body marker
+ *   scan. Two genuinely concurrent runs (a double-click on "enable
+ *   auto-merge", a redelivered webhook) could both see "not yet notified"
+ *   in the old comment-scan design before either one posted, producing two
+ *   comments. GitHub's label set is idempotent (adding an already-present
+ *   label is a true no-op, never a duplicate), so checking and setting a
+ *   label instead removes that failure mode for the label itself. The
+ *   read-then-act sequence around it is not made fully atomic by this, a
+ *   truly simultaneous pair of runs can still both read "label absent"
+ *   before either adds it, but the window shrinks from "however many
+ *   comments this PR has ever had" to one small labels-list request. This
+ *   was never a security issue either way: the disable-auto-merge action
+ *   above already tolerates being called twice, the only failure mode was
+ *   a cosmetic duplicate comment.
+ * - The comment is posted BEFORE the label is set, not after. An earlier
+ *   version of this fix did it the other way round, and adversarial review
+ *   caught a real regression: if the label-add succeeded but the comment
+ *   call then failed, the label was already committed, so every later run
+ *   would see "already notified" and skip the comment forever, silence
+ *   instead of the original bug's occasional duplicate. Posting the
+ *   comment first means the only way to fail is the one this file already
+ *   accepts elsewhere: retry produces at worst a duplicate, never silence.
  */
 
 const DEFAULT_PATTERN_SOURCE =
@@ -110,6 +132,38 @@ export function extractCheckablePaths(prFilesApiResponse) {
   return paths;
 }
 
+/**
+ * Pure function, exported for the test suite: does this label list already
+ * contain the guard's dedup label? Labels are a GitHub REST API's array of
+ * `{name, ...}` objects, matched here by name only.
+ */
+export function hasGuardLabel(labels, labelName) {
+  return labels.some(l => l && l.name === labelName);
+}
+
+/**
+ * Pure sequencing function, exported for the test suite: `postComment` must
+ * run, and complete, before `addLabel` is even attempted, and a throw from
+ * `addLabel` must never mask a successful `postComment` (swallowed here,
+ * not propagated). A throw from `postComment` itself must propagate to the
+ * caller and must prevent `addLabel` from running at all.
+ *
+ * This exists because an earlier version of this file got the order
+ * backwards (label first, comment second): if the label-add succeeded but
+ * the comment then failed, the label persisted server-side, so every later
+ * run would see "already notified" and skip the comment forever. Comment
+ * first means the worst case on any failure is a duplicate comment on
+ * retry, never permanent silence. See the module docstring.
+ */
+export function notifyOncePerPR(postComment, addLabel) {
+  postComment();
+  try {
+    addLabel();
+  } catch {
+    // Labeling is a best-effort dedup aid; the comment above already ran.
+  }
+}
+
 async function main() {
   const { execFileSync } = await import("node:child_process");
 
@@ -141,24 +195,21 @@ async function main() {
 
   console.error(`::error::${result.reason} Disabling auto-merge on PR #${prNumber}.`);
 
-  // Avoid spamming a comment on every retrigger of the same failing PR:
-  // check for an existing marker from this guard before posting another.
+  // Avoid spamming a comment on every retrigger of the same failing PR: a
+  // label, not a comment-body marker scan, decides whether this guard has
+  // already notified on this PR. See the module docstring for why a label
+  // is safer against two concurrent runs than scanning comment history.
   const MARKER = "<!-- muraqib-auto-merge-guard -->";
-  let alreadyCommented = false;
+  const LABEL = "muraqib-guard-blocked";
+  let alreadyNotified = false;
   try {
-    // Same --paginate-without--jq reasoning as the files fetch above. A PR
-    // with many prior comments would otherwise crash this lookup, which
-    // was already caught by the surrounding try/catch, but "silently
-    // defaults to re-commenting" is a worse failure mode than "correctly
-    // finds the existing comment," so fix the root cause instead of
-    // relying on the fallback.
-    const rawComments = execFileSync("gh", ["api", `repos/${repo}/issues/${prNumber}/comments`, "--paginate"], {
+    const rawLabels = execFileSync("gh", ["api", `repos/${repo}/issues/${prNumber}/labels`, "--paginate"], {
       encoding: "utf8",
     });
-    const comments = parsePaginatedArrayOutput(rawComments);
-    alreadyCommented = comments.some(c => (c.body || "").includes(MARKER));
+    const labels = parsePaginatedArrayOutput(rawLabels);
+    alreadyNotified = hasGuardLabel(labels, LABEL);
   } catch {
-    // If we can't check, err toward commenting once rather than staying silent.
+    // If we can't check, err toward notifying once rather than staying silent.
   }
 
   try {
@@ -172,9 +223,22 @@ async function main() {
     console.error(`::error::Could not disable auto-merge (it may have already merged before this check ran): ${err.message}`);
   }
 
-  if (!alreadyCommented) {
+  if (!alreadyNotified) {
     const body = `${MARKER}\nAuto-merge Guard: this PR touches a path matching the sensitive-paths pattern (\`${result.matches.join(", ")}\`). Auto-merge has been disabled, manual review required.\n\nIf this guard is not configured as a required status check on this branch, GitHub's native auto-merge may already have completed before this comment posted; check the merge state above.`;
-    execFileSync("gh", ["pr", "comment", prNumber, "--repo", repo, "--body", body]);
+    notifyOncePerPR(
+      () => execFileSync("gh", ["pr", "comment", prNumber, "--repo", repo, "--body", body]),
+      // Adding a label GitHub hasn't seen before creates it automatically
+      // (confirmed empirically against a real GitHub Actions run using
+      // only pull-requests: write, no issues: write needed), and adding an
+      // already-present label is a genuine no-op, never a duplicate. That
+      // test PR was same-repo, not a fork: GitHub only downgrades
+      // GITHUB_TOKEN to read-only on `pull_request` from a fork, a rule
+      // that never applies to `pull_request_target` (the whole reason this
+      // guard uses it), so the same-repo test result transfers here.
+      () => execFileSync("gh", ["api", "-X", "POST", `repos/${repo}/issues/${prNumber}/labels`, "-f", `labels[]=${LABEL}`], {
+        encoding: "utf8",
+      })
+    );
   }
 
   process.exit(1);
