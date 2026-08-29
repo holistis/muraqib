@@ -1,0 +1,18 @@
+name: TEST label permission scope (throwaway, delete after use)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  test-label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Try to add a label using only pull-requests write
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels -f 'labels[]=permission-scope-test' && echo "SUCCESS: pull-requests write alone was enough" || echo "FAILED: needs issues write too"
