@@ -31,13 +31,28 @@ const JOB_NAME = "guard";
  * versa) in `a` produces exactly `b`, ignoring whitespace differences. This
  * only recognizes the specific shape this repo actually uses (a pair of
  * steps gated on `<expr> == null` / `<expr> != null`), not general logical
- * negation. Good enough to prove "something always runs" for that shape;
- * anything cleverer than that still falls through to the human-review flag.
+ * negation, and only when each side is a single, simple comparison.
+ *
+ * Deliberately bails out to "not a complement" (false) on a compound
+ * condition (&&, ||) or a strict-equality operator (===, !==, which GitHub
+ * Actions doesn't have anyway): a naive textual swap of a compound
+ * condition can look complementary without being one. For example
+ * `a==b && c!=d` swapped is `a!=b && c==d`, which reads as the complement
+ * but is not: both are false at once whenever a==b and c==d hold
+ * simultaneously, so neither step would run. De Morgan's laws don't
+ * distribute the way a plain operator swap assumes. Anything past a single
+ * simple comparison falls through to the human-review flag instead of a
+ * false "this is safe".
  */
 function isLikelyComplementOf(a, b) {
   const normalize = s => s.replace(/\s+/g, "");
   const na = normalize(a);
   const nb = normalize(b);
+
+  const isSimpleComparison = s =>
+    !/&&|\|\||===|!==/.test(s) && (s.match(/==|!=/g) || []).length === 1;
+  if (!isSimpleComparison(na) || !isSimpleComparison(nb)) return false;
+
   const swapped = na.replace(/==|!=/g, m => (m === "==" ? "!=" : "=="));
   return swapped === nb;
 }
