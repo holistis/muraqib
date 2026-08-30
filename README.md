@@ -59,7 +59,7 @@ Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge
 
 ## How this compares to a hosted service like Octomind
 
-Octomind offered a similar idea (nightly AI-assisted QA) as a paid, hosted product starting around $89/month, and stopped taking new customers in April 2026. This project is not a hosted replacement for it, it is a different shape entirely: you clone it, it runs in your own GitHub Actions and your own Claude subscription, and there is no monthly bill because there is no service to bill for. The tradeoff is honest too, you set it up yourself (a config file, two secrets, your own test specs), instead of signing up and getting a dashboard.
+Octomind offered a similar idea (nightly AI-assisted QA) as a paid, hosted product starting around $89/month, raised close to $5M, and shut down in April 2026 after about three years. That is a fact about their business model and funding runway, not proof nobody wants this. Testing does not get less important as more of a codebase gets written by an AI agent instead of a person, if anything the opposite. This project is not a hosted replacement for what they built, it is a different shape entirely: you clone it, it runs in your own GitHub Actions and your own Claude subscription, and there is no monthly bill because there is no service to bill for. The tradeoff is honest too, you set it up yourself (a config file, two secrets, your own test specs), instead of signing up and getting a dashboard.
 
 If you want a hosted, zero-setup product with support, this is not that. If you want the same core idea for $0 and are fine reading a README, this repo is free and MIT licensed, and its full defect history (below) is public, not a claim.
 
