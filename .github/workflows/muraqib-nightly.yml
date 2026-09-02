@@ -23,7 +23,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # This is a hard kill, not a failure. If the runner stops the job here,
+    # Playwright writes no report, GitHub records the run as "cancelled", and
+    # every step below that keys off `tests_failed` is skipped: no fix PR, no
+    # failing job, no email. The run looks like nothing happened.
+    #
+    # So this number is deliberately NOT the real limit. playwright.config.ts
+    # sets globalTimeout below it, which makes Playwright stop itself first,
+    # with a report and a non-zero exit, so a slow suite reads as a loud
+    # failure instead of silence. This value only exists as the outer backstop
+    # for the install and upload steps around the test run.
+    #
+    # Keep it above globalTimeout. scripts/check-timeout-budget.mjs fails the
+    # build if the two ever drift into the wrong order.
+    timeout-minutes: 45
     # actions:write is required for the createWorkflowDispatch() call below ,
     # without this explicit grant it 403s on any repo where the default
     # GITHUB_TOKEN permissions are read-only (GitHub's newer repo default).

@@ -2,6 +2,35 @@
 
 Running log of things this project got wrong and fixed, and why. Kept separate from SECURITY.md because not everything here is a security issue. Some of it is just "this broke in a way worth remembering."
 
+## 2026-09-03: the nightly had been cancelled every night for two months and nothing said a word
+
+The project this template was built for stopped being watched somewhere in late June. Nobody noticed until today, and nobody could have, because the failure mode removed its own alarm.
+
+**What the run history showed.** 164 nightly runs on the host project: 7 success, 76 failure, 81 cancelled. The last 60-plus consecutive runs were all cancelled. Every one of them stopped at almost exactly 20 minutes and 18 seconds.
+
+**The cause is one number against another.** The job carried `timeout-minutes: 20`. The Playwright defaults in this template are `workers: 1`, `fullyParallel: false`, and one retry on CI, chosen deliberately to be gentle on a production app. That combination is roughly eight to ten seconds per test, so a suite crossing about 150 tests crosses 20 minutes. The host project's suite had grown to 24 spec files and around 150 tests. From the night it crossed that line, the runner killed the job mid-run, every night, forever.
+
+**Why it was silent is the part worth remembering.** A runner timeout is a kill, not a failure. GitHub records the run's conclusion as `cancelled`. The tests step never gets to write `tests_failed=true`, so:
+
+- the Claude fix workflow is never dispatched
+- the "fail job if tests failed" step is skipped, so the job does not go red
+- no email goes out
+
+The Actions tab shows a run every night. The inbox is quiet. Everything looks like a system that is working and finding nothing wrong. That is strictly worse than having no QA at all, because you have stopped looking yourself.
+
+**The deeper mistake, and it is an architecture one, not a config one.** Every alert path in this project hung off a single trigger: a test run that finished and reported. Nothing watched the trigger. So the entire class of "the run never reported" was invisible by construction, and the timeout was only one member of that class. GitHub silently disables schedules on repositories with no pushes for 60 days. An expired secret kills the job before the tests. Someone disables a workflow and forgets. All four look identical from the inside: calm dashboard, empty inbox, unwatched app.
+
+**What changed:**
+
+1. `playwright.config.ts` now sets `globalTimeout` below the job's `timeout-minutes`. Playwright stops itself first, exits non-zero, and still writes `results.json`, so an over-running suite reads as a loud failure with a full report instead of a silent cancel. The ordering is the fix, not the bigger number.
+2. `scripts/check-timeout-budget.mjs` (+ tests, wired into `self-check.yml`) fails the build if `globalTimeout` is missing, is not below the job timeout, or does not leave at least five minutes for the install and upload steps around the run. It also fails closed on any `globalTimeout` shape it cannot parse back to a number of minutes, on the same principle the sensitive-paths guard uses for an unparseable pattern: a checker that cannot read the file must not pass it.
+3. `scripts/check-nightly-heartbeat.mjs` and `.github/workflows/muraqib-watchdog.yml` close the class rather than the instance. Once a day the watchdog asks whether the nightly has produced any conclusive result recently, and shouts if the last runs were all inconclusive, if nothing has reported inside the quiet window, or if the workflow has no runs at all. Fed the host project's real run history it returns the alarm this repo needed two months ago.
+4. The same watchdog also flags a check that has been red for seven runs straight. A permanently failing test has stopped being an alert and has become furniture, which is the same outcome as silence by a different route.
+
+**The watchdog installs nothing on purpose.** No dependencies, no `npm install` step, just the Actions API and the `fetch` built into Node 20. Whatever watches the watchman has to have fewer moving parts than the watchman, or you have only added another thing that can go quiet without telling you.
+
+**Lesson, stated plainly so it transfers:** an alerting system built on one trigger has exactly one bug that disables all of it, and that bug will not announce itself. For any check that is supposed to interrupt a person, ask separately from "does it catch problems": what does it look like when this check stops running, and who finds out. If the honest answer is "it looks like everything is fine", the check is not finished.
+
 ## 2026-08-28: three layered bugs in the same file, found while preparing for a wider release
 
 **1. Script injection (CWE-94).** Failure text and workflow inputs were spliced via `${{ }}` directly into JS template literals and a bash string instead of `env:` variables. See SECURITY.md for the fix and the permanent regression check (`npm run check:workflows`).

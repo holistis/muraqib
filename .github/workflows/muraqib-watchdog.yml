@@ -1,0 +1,55 @@
+# Muraqib Watchdog
+#
+# Checks one thing: is the nightly still able to tell you anything?
+#
+# Every other alert in Muraqib hangs off a test run that finished and reported.
+# That leaves a gap with no alarm in it at all, because the trigger itself
+# never fires: a job hard-killed on timeout-minutes ends as "cancelled" and
+# skips every downstream step, GitHub silently stops schedules on repos that
+# go 60 days without a push, an expired secret kills the job before the tests,
+# someone disables the workflow and forgets. In all of them the dashboard is
+# calm and the inbox is empty while nothing is being watched.
+#
+# This workflow deliberately installs nothing. It has no dependencies, reads
+# the nightly's run history straight from the Actions API, and uses the fetch
+# built into Node 20. The thing that watches the watchman should have fewer
+# moving parts than the watchman, otherwise you have just added another thing
+# that can go quiet.
+#
+# Optional secrets, for email on top of the failing job:
+#   RESEND_API_KEY, MURAQIB_EMAIL_TO, MURAQIB_EMAIL_FROM
+# Without them this still fails visibly in the Actions tab.
+
+name: Muraqib Watchdog
+
+on:
+  schedule:
+    # Six hours after the nightly's 02:00 UTC start, so even a slow run that
+    # uses its whole time budget has finished and reported before this looks.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check that the nightly can still reach a person
+        # Everything arrives as env. Nothing is spliced into this run body,
+        # per SECURITY.md and enforced by npm run check:workflows.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MURAQIB_EMAIL_TO: ${{ secrets.MURAQIB_EMAIL_TO }}
+          MURAQIB_EMAIL_FROM: ${{ secrets.MURAQIB_EMAIL_FROM }}
+        run: node scripts/watchdog.mjs

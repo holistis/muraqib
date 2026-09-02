@@ -14,7 +14,10 @@
     "task": "ts-node task-runner.ts",
     "check:workflows": "node scripts/check-no-expression-splicing.mjs",
     "check:required-checks": "node scripts/check-required-check-not-skippable.mjs",
-    "test:scripts": "node --test scripts/*.test.mjs"
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "check:timeout-budget": "node scripts/check-timeout-budget.mjs",
+    "watchdog": "node scripts/watchdog.mjs",
+    "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget"
   },
   "dependencies": {
     "@playwright/test": "^1.44.0",
