@@ -10,7 +10,7 @@
  * person, which is the failure mode that cost this project two silent months
  * (see LESSONS.md).
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, relative, resolve, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findTimeoutBudgetProblems } from "../scripts/check-timeout-budget.mjs";
@@ -22,13 +22,60 @@ const VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf
 const PORTABLE_FILES = [
   "muraqib.config.ts",
   "playwright.config.ts",
-  "tests/auth.spec.ts",
-  "tests/checkout.spec.ts",
-  "tests/public-pages.spec.ts",
   "scripts/check-sensitive-paths.mjs",
   "scripts/check-nightly-heartbeat.mjs",
   "scripts/watchdog.mjs",
 ];
+
+/**
+ * Starting points, not files to keep in sync. They only go in when there are
+ * no specs at all yet.
+ *
+ * Copying an example spec into a repo that already has real ones adds a test
+ * written against a fictional app to a monitor pointed at a real one. It fails
+ * on the first night, and it fails for a reason the owner did not cause and
+ * cannot fix by changing their own code. Running init a second time to pick up
+ * a new workflow should never hand someone a broken nightly as the price.
+ */
+const EXAMPLE_SPECS = [
+  "tests/auth.spec.ts",
+  "tests/checkout.spec.ts",
+  "tests/public-pages.spec.ts",
+];
+
+/** True when the target already has Playwright specs of its own. */
+function hasExistingSpecs(testsDir) {
+  if (!existsSync(testsDir)) return false;
+  return readdirSync(testsDir).some(entry => entry.endsWith(".spec.ts") || entry.endsWith(".spec.js"));
+}
+
+/**
+ * Finds a workflow already installed under any filename, by reading its
+ * `name:` rather than trusting the path.
+ *
+ * Filenames drift. A host project may well have renamed auto-merge-guard.yml
+ * to muraqib-auto-merge-guard.yml to keep its workflow list tidy, and a
+ * filename-only check would then install a second copy of the same guard
+ * beside it. Two guards on the same PR is not twice as safe, it is one
+ * confusing duplicate status check and a second workflow nobody remembers
+ * agreeing to.
+ */
+export function findInstalledWorkflow(workflowsDir, workflowName, readDir = readdirSync, readFile = readFileSync) {
+  if (!existsSync(workflowsDir)) return null;
+  for (const entry of readDir(workflowsDir)) {
+    if (!entry.endsWith(".yml") && !entry.endsWith(".yaml")) continue;
+    const source = readFile(join(workflowsDir, entry), "utf8");
+    const declared = /^name:\s*(.+?)\s*$/m.exec(source);
+    if (declared && declared[1].replace(/^["']|["']$/g, "") === workflowName) return entry;
+  }
+  return null;
+}
+
+/** The `name:` each shipped workflow declares, used for the check above. */
+export function declaredWorkflowName(source) {
+  const match = /^name:\s*(.+?)\s*$/m.exec(source);
+  return match ? match[1].replace(/^["']|["']$/g, "") : null;
+}
 
 /** Files GitHub insists live at the repo root, whatever else you do. */
 const WORKFLOW_FILES = [
@@ -135,8 +182,11 @@ function init(args) {
   const target = process.cwd();
   const results = [];
 
+  const localPath = file => join(target, args.dir === "." ? file : join(args.dir, file));
+  const specsAlreadyHere = hasExistingSpecs(localPath("tests"));
+
   for (const file of PORTABLE_FILES) {
-    const to = join(target, args.dir === "." ? file : join(args.dir, file));
+    const to = localPath(file);
     if (existsSync(to)) {
       results.push({ path: to, status: "kept" });
       continue;
@@ -148,36 +198,71 @@ function init(args) {
     results.push({ path: to, status: args.dryRun ? "would-write" : "written" });
   }
 
-  for (const file of WORKFLOW_FILES) {
-    const to = join(target, file);
+  for (const file of EXAMPLE_SPECS) {
+    const to = localPath(file);
+    if (specsAlreadyHere) {
+      results.push({ path: to, status: "skipped-example" });
+      continue;
+    }
     if (existsSync(to)) {
       results.push({ path: to, status: "kept" });
       continue;
     }
-    const source = retargetWorkflow(
-      readFileSync(join(PACKAGE_ROOT, file), "utf8"),
-      args.dir,
-      file.split("/").pop()
-    );
     if (!args.dryRun) {
       mkdirSync(dirname(to), { recursive: true });
-      writeFileSync(to, source);
+      writeFileSync(to, readFileSync(join(PACKAGE_ROOT, file)));
+    }
+    results.push({ path: to, status: args.dryRun ? "would-write" : "written" });
+  }
+
+  const workflowsDir = join(target, ".github/workflows");
+  for (const file of WORKFLOW_FILES) {
+    const to = join(target, file);
+    const source = readFileSync(join(PACKAGE_ROOT, file), "utf8");
+
+    const installedAs = findInstalledWorkflow(workflowsDir, declaredWorkflowName(source));
+    if (installedAs) {
+      results.push({ path: join(workflowsDir, installedAs), status: "kept" });
+      continue;
+    }
+    if (existsSync(to)) {
+      results.push({ path: to, status: "kept" });
+      continue;
+    }
+
+    const retargeted = retargetWorkflow(source, args.dir, file.split("/").pop());
+    if (!args.dryRun) {
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, retargeted);
     }
     results.push({ path: to, status: args.dryRun ? "would-write" : "written" });
   }
 
   const kept = results.filter(r => r.status === "kept");
+  const skipped = results.filter(r => r.status === "skipped-example");
+  const LABELS = {
+    kept: "kept      ",
+    "skipped-example": "skipped   ",
+  };
+  const SUFFIXES = {
+    kept: "  (already there, left alone)",
+    "skipped-example": "  (you already have specs)",
+  };
   for (const r of results) {
-    const label = r.status === "kept" ? "kept      " : args.dryRun ? "would write" : "wrote     ";
-    const suffix = r.status === "kept" ? "  (already there, left alone)" : "";
-    console.log(`  ${label} ${relative(target, r.path) || r.path}${suffix}`);
+    const label = LABELS[r.status] ?? (args.dryRun ? "would write" : "wrote     ");
+    console.log(`  ${label} ${relative(target, r.path) || r.path}${SUFFIXES[r.status] ?? ""}`);
   }
 
   console.log("");
   if (kept.length > 0) {
     console.log(`${kept.length} file(s) already existed and were left exactly as they were.`);
-    console.log("");
   }
+  if (skipped.length > 0) {
+    console.log(
+      `${skipped.length} example spec(s) skipped. This repo already has its own, and dropping an example written against a fictional app into a monitor pointed at a real one would just fail every night for no reason.`
+    );
+  }
+  if (kept.length > 0 || skipped.length > 0) console.log("");
   if (args.dryRun) {
     console.log("Dry run, nothing was written. Drop --dry-run to apply.");
     return;

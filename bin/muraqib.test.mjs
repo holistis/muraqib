@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseArgs, retargetWorkflow } from "./muraqib.mjs";
+import { parseArgs, retargetWorkflow, findInstalledWorkflow, declaredWorkflowName } from "./muraqib.mjs";
 
 const JOB_WITH_RUNS = [
   "name: Muraqib Nightly",
@@ -110,4 +110,51 @@ test("an unknown flag is reported rather than ignored", () => {
 
 test("no arguments falls through to help, not to an accidental install", () => {
   assert.equal(parseArgs([]).command, undefined);
+});
+
+test("reads the name a workflow declares, quoted or not", () => {
+  assert.equal(declaredWorkflowName(["name: Muraqib Nightly", "on: push", ""].join("\n")), "Muraqib Nightly");
+  assert.equal(declaredWorkflowName(['name: "Muraqib Nightly"', ""].join("\n")), "Muraqib Nightly");
+  assert.equal(declaredWorkflowName(["# name: commented out", "on: push", ""].join("\n")), null);
+});
+
+test("an already-installed workflow is found under a renamed file", () => {
+  // A host project may well rename auto-merge-guard.yml to something tidier.
+  // Matching on filename alone would then install a second copy of the same
+  // guard next to it, which is not twice as safe, just one confusing extra
+  // required status check on every PR. This case is real: it is exactly what
+  // the project this template was built for had done.
+  const contents = {
+    "ci.yml": "name: CI\non: push\n",
+    "muraqib-auto-merge-guard.yml": "name: Muraqib Auto-Merge Guard\non: pull_request_target\n",
+  };
+  const found = findInstalledWorkflow(
+    ".github/workflows",
+    "Muraqib Auto-Merge Guard",
+    () => Object.keys(contents),
+    path => contents[path.split(/[\\/]/).pop()]
+  );
+  assert.equal(found, "muraqib-auto-merge-guard.yml");
+});
+
+test("a workflow that is genuinely absent reports absent", () => {
+  const found = findInstalledWorkflow(
+    ".github/workflows",
+    "Muraqib Watchdog",
+    () => ["ci.yml"],
+    () => "name: CI\non: push\n"
+  );
+  assert.equal(found, null);
+});
+
+test("non-yaml files in the workflows directory are ignored", () => {
+  // A README in .github/workflows that happens to start with a name: line
+  // must not be mistaken for an installed workflow.
+  const found = findInstalledWorkflow(
+    ".github/workflows",
+    "Muraqib Watchdog",
+    () => ["README.md"],
+    () => "name: Muraqib Watchdog\n"
+  );
+  assert.equal(found, null);
 });
