@@ -1,7 +1,7 @@
 {
   "name": "muraqib",
-  "version": "0.1.0",
-  "description": "Zero-maintenance nightly QA for solo SaaS founders",
+  "version": "0.2.0",
+  "description": "Nightly Playwright QA that tells you when it stops watching. Claude opens the fix PR, a watchdog catches the nights nothing reported at all.",
   "license": "MIT",
   "author": "Abdellah Ouadoudi",
   "repository": {
@@ -14,18 +14,66 @@
     "task": "ts-node task-runner.ts",
     "check:workflows": "node scripts/check-no-expression-splicing.mjs",
     "check:required-checks": "node scripts/check-required-check-not-skippable.mjs",
-    "test:scripts": "node --test scripts/*.test.mjs",
+    "test:scripts": "node --test scripts/*.test.mjs bin/*.test.mjs",
     "check:timeout-budget": "node scripts/check-timeout-budget.mjs",
     "watchdog": "node scripts/watchdog.mjs",
     "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget"
   },
   "dependencies": {
-    "@playwright/test": "^1.44.0",
-    "dotenv": "^16.4.5"
+    "yaml": "^2.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "dotenv": "^16.4.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5",
-    "yaml": "^2.5.0"
+    "typescript": "^5.4.5"
+  },
+  "bin": {
+    "muraqib": "./bin/muraqib.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "homepage": "https://github.com/holistis/muraqib#readme",
+  "bugs": {
+    "url": "https://github.com/holistis/muraqib/issues"
+  },
+  "keywords": [
+    "playwright",
+    "qa",
+    "testing",
+    "e2e",
+    "regression",
+    "monitoring",
+    "github-actions",
+    "nightly",
+    "watchdog",
+    "claude",
+    "ai",
+    "solo-founder",
+    "indie-hacker",
+    "synthetic-monitoring",
+    "test-automation"
+  ],
+  "files": [
+    "bin/muraqib.mjs",
+    "scripts/",
+    "tests/",
+    ".github/workflows/",
+    "muraqib.config.ts",
+    "playwright.config.ts",
+    "task-runner.ts",
+    "tasks/",
+    "lib/",
+    "LESSONS.md",
+    "SECURITY.md"
+  ],
+  "peerDependencies": {
+    "@playwright/test": ">=1.44.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    }
   }
 }
