@@ -14,9 +14,11 @@
  *   GITHUB_REPOSITORY    required, "owner/name", set by Actions
  *   GITHUB_API_URL       optional, set by Actions, for GitHub Enterprise
  *   MURAQIB_NIGHTLY_WORKFLOW  optional, default "muraqib-nightly.yml"
- *   RESEND_API_KEY       optional, without it the job still fails loudly
+ *   RESEND_API_KEY       optional, one of two ways to be told
  *   MURAQIB_EMAIL_TO     optional, required for email
  *   MURAQIB_EMAIL_FROM   optional, required for email
+ *   MURAQIB_TELEGRAM_BOT_TOKEN  optional, the other way
+ *   MURAQIB_TELEGRAM_CHAT_ID    optional, required for telegram
  *   MURAQIB_MAX_QUIET_HOURS / _MAX_CANCELS / _MAX_FAILURES  optional overrides
  */
 import { assessHeartbeat } from "./check-nightly-heartbeat.mjs";
@@ -73,29 +75,96 @@ async function fetchNightlyRuns() {
   return { runs: Array.isArray(body.workflow_runs) ? body.workflow_runs : null };
 }
 
-async function sendEmail(subject, body) {
-  const key = process.env.RESEND_API_KEY;
-  const to = process.env.MURAQIB_EMAIL_TO;
-  const from = process.env.MURAQIB_EMAIL_FROM;
+/**
+ * Where an alert can go, in the order they are tried.
+ *
+ * Email is the obvious channel and it is also the one most likely to be
+ * missing: it needs a provider account, a verified sending domain, and a key
+ * that has to be set before anything can ever arrive. A project that skipped
+ * that setup has no alerting at all, and the two month silence this whole
+ * feature exists because of ran on exactly that: a repo whose RESEND_API_KEY
+ * had never been set.
+ *
+ * A bot token and a chat id are a lower bar, and plenty of projects already
+ * have one for something else. Supporting both means the alert reaches
+ * somebody through whichever channel is already configured, rather than
+ * depending on the one that needs the most setup.
+ */
+const CHANNELS = [
+  {
+    name: "email",
+    config: () => ({
+      key: process.env.RESEND_API_KEY,
+      to: process.env.MURAQIB_EMAIL_TO,
+      from: process.env.MURAQIB_EMAIL_FROM,
+    }),
+    configured: c => Boolean(c.key && c.to && c.from),
+    missing: "RESEND_API_KEY, MURAQIB_EMAIL_TO and MURAQIB_EMAIL_FROM",
+    send: (c, subject, body) =>
+      fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { authorization: `Bearer ${c.key}`, "content-type": "application/json" },
+        // Plain text, not HTML. The body carries strings that came back from
+        // the GitHub API, and text/plain gives them nowhere to be interpreted.
+        body: JSON.stringify({ from: c.from, to: c.to, subject, text: body }),
+      }),
+    describe: c => c.to,
+  },
+  {
+    name: "telegram",
+    config: () => ({
+      token: process.env.MURAQIB_TELEGRAM_BOT_TOKEN,
+      chatId: process.env.MURAQIB_TELEGRAM_CHAT_ID,
+    }),
+    configured: c => Boolean(c.token && c.chatId),
+    missing: "MURAQIB_TELEGRAM_BOT_TOKEN and MURAQIB_TELEGRAM_CHAT_ID",
+    send: (c, subject, body) =>
+      // JSON rather than form encoding: the body is multi-line and contains
+      // URLs, and a form-encoded payload would need escaping that is easy to
+      // get subtly wrong.
+      fetch(`https://api.telegram.org/bot${c.token}/sendMessage`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: c.chatId, text: `${subject}
 
-  if (!key || !to || !from) {
-    console.error("NOTE: no RESEND_API_KEY / MURAQIB_EMAIL_TO / MURAQIB_EMAIL_FROM, so no email was sent. The job still fails below, so this is visible in Actions either way.");
+${body}`, disable_web_page_preview: true }),
+      }),
+    describe: c => `chat ${c.chatId}`,
+  },
+];
+
+/**
+ * Sends through every configured channel and reports what happened.
+ *
+ * Returns nothing and throws nothing on a delivery failure on purpose: the
+ * caller already fails the job because the nightly is unhealthy. What matters
+ * here is that a channel which was configured and then did not deliver leaves
+ * a line in the log, rather than looking the same as a channel nobody set up.
+ */
+async function sendAlert(subject, body) {
+  const configured = CHANNELS.map(channel => ({ channel, config: channel.config() })).filter(
+    ({ channel, config }) => channel.configured(config)
+  );
+
+  if (configured.length === 0) {
+    console.error(
+      `NOTE: no notification channel is configured, so nothing was sent. Set either ${CHANNELS.map(c => c.missing).join(", or ")}. The job still fails below, so this stays visible in Actions either way.`
+    );
     return;
   }
 
-  // Plain text, not HTML. The body carries strings that came back from the
-  // GitHub API, and text/plain gives them nowhere to be interpreted.
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ from, to, subject, text: body }),
-  });
-
-  if (!response.ok) {
-    console.error(`NOTE: Resend returned ${response.status}, the alert email did not go out.`);
-    return;
+  for (const { channel, config } of configured) {
+    try {
+      const response = await channel.send(config, subject, body);
+      if (!response.ok) {
+        console.error(`NOTE: ${channel.name} returned ${response.status}, that alert did not go out.`);
+        continue;
+      }
+      console.log(`Alert sent via ${channel.name} to ${channel.describe(config)}.`);
+    } catch (err) {
+      console.error(`NOTE: ${channel.name} threw while sending: ${err.message}`);
+    }
   }
-  console.log(`Alert email sent to ${to}.`);
 }
 
 async function main() {
@@ -128,7 +197,7 @@ async function main() {
   console.error(`WATCHDOG: ${verdict.code}`);
   console.error(body);
 
-  await sendEmail(`Muraqib is not watching ${repo}`, body);
+  await sendAlert(`Muraqib is not watching ${repo}`, body);
   process.exitCode = 1;
 }
 

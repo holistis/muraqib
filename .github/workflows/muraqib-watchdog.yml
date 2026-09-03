@@ -16,9 +16,17 @@
 # moving parts than the watchman, otherwise you have just added another thing
 # that can go quiet.
 #
-# Optional secrets, for email on top of the failing job:
+# Optional secrets, so the alert reaches you somewhere other than the Actions
+# tab. Either set is enough, and both work together:
 #   RESEND_API_KEY, MURAQIB_EMAIL_TO, MURAQIB_EMAIL_FROM
-# Without them this still fails visibly in the Actions tab.
+#   MURAQIB_TELEGRAM_BOT_TOKEN, MURAQIB_TELEGRAM_CHAT_ID
+#
+# Telegram is here because email is the channel most likely to be missing: it
+# needs a provider account, a verified sending domain and a key. The project
+# this was built for had never set one, which is how it went two months without
+# a single alert. A bot token is a lower bar and many projects already have one.
+#
+# With neither set, this still fails visibly in the Actions tab.
 
 name: Muraqib Watchdog
 
@@ -52,4 +60,6 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           MURAQIB_EMAIL_TO: ${{ secrets.MURAQIB_EMAIL_TO }}
           MURAQIB_EMAIL_FROM: ${{ secrets.MURAQIB_EMAIL_FROM }}
+          MURAQIB_TELEGRAM_BOT_TOKEN: ${{ secrets.MURAQIB_TELEGRAM_BOT_TOKEN }}
+          MURAQIB_TELEGRAM_CHAT_ID: ${{ secrets.MURAQIB_TELEGRAM_CHAT_ID }}
         run: node scripts/watchdog.mjs

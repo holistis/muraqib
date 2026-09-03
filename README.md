@@ -73,7 +73,11 @@ The watchdog installs nothing. No dependencies, no npm step, just the Actions AP
 1. `npx muraqib init` in your repo.
 2. `npm install --save-dev @playwright/test dotenv && npx playwright install chromium`
 3. Edit `muraqib.config.ts`: `baseUrl`, `flows`, `alerting.emailTo` and `emailFrom`.
-4. Add repo secrets: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `MURAQIB_EMAIL_TO`, `MURAQIB_EMAIL_FROM`.
+4. Add repo secrets so alerts can reach you. Either set works, and you can use both:
+   - email: `RESEND_API_KEY`, `MURAQIB_EMAIL_TO`, `MURAQIB_EMAIL_FROM`
+   - telegram: `MURAQIB_TELEGRAM_BOT_TOKEN`, `MURAQIB_TELEGRAM_CHAT_ID`
+
+   Plus `ANTHROPIC_API_KEY` for the fix workflow. Telegram is offered because email is the channel most likely to be missing: it needs a provider account, a verified domain and a key, and skipping any of that leaves you with no alerting at all. That is not hypothetical, it is what happened here.
 5. Write your Playwright specs in `tests/`, one file per flow in the config.
 6. `npx muraqib doctor` to confirm the alert path is live.
 
