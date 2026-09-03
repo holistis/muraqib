@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname, relative, resolve, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findTimeoutBudgetProblems } from "../scripts/check-timeout-budget.mjs";
+import { findSilentAlertingProblems, readWorkflows } from "../scripts/check-alerting-not-silent.mjs";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const VERSION = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")).version;
@@ -292,6 +293,7 @@ function doctor(args) {
   const problems = [];
   const passed = [];
 
+  const workflowsDir = join(target, ".github/workflows");
   const workflow = findFirst(target, [".github/workflows/muraqib-nightly.yml"]);
   const config = findFirst(target, [
     `${base}playwright.config.ts`,
@@ -329,6 +331,20 @@ function doctor(args) {
         detail: `${problem.label}: ${problem.message}`,
       });
     }
+  }
+
+  // Every workflow in the repo, not only Muraqib's own. A rollback alert or a
+  // deploy notification that quietly skips itself leaves the same hole, and
+  // whoever runs this would rather hear about all of them at once.
+  const silentAlerts = findSilentAlertingProblems(readWorkflows(workflowsDir));
+  if (silentAlerts.length === 0) {
+    passed.push("Notification steps fail loudly when they cannot deliver, so a missing or expired key cannot pass for silence.");
+  }
+  for (const problem of silentAlerts) {
+    problems.push({
+      title: "A notification here can fail without telling anyone",
+      detail: `${problem.label}: ${problem.message}`,
+    });
   }
 
   if (findFirst(target, [".github/workflows/muraqib-watchdog.yml"])) {
