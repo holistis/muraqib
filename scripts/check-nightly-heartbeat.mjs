@@ -31,6 +31,53 @@
 /** GitHub conclusions that mean the run actually finished and said something. */
 const CONCLUSIVE = new Set(["success", "failure"]);
 
+/**
+ * Events that mean somebody, or a schedule, deliberately asked for this run.
+ *
+ * Runs triggered by a push or a pull request are a different animal, and
+ * counting them here produces false alarms. A workflow with
+ * `concurrency: cancel-in-progress: true`, which is a common and recommended
+ * setup, cancels its own older runs every time someone pushes again. Those
+ * cancellations are the feature working. Reading them as "the nightly went
+ * quiet" would flag healthy repositories, and a check that cries wolf gets
+ * muted, which is the exact failure this file exists to prevent.
+ *
+ * Found by running this against 40 public repositories with a nightly
+ * Playwright job. One of them, openobserve, came back as an inconclusive
+ * streak on 18 cancelled runs. Every one was a pull_request run cancelled by
+ * its concurrency group, with durations from 28 seconds to 32 minutes, and
+ * that workflow's cron was commented out. Nothing was wrong there at all.
+ */
+const DELIBERATE_EVENTS = new Set(["schedule", "workflow_dispatch"]);
+
+/**
+ * Events that are ordinary CI rather than a timer, and are excluded on purpose.
+ * Separated from "unrecognized" so the two can be treated differently below.
+ */
+const CI_EVENTS = new Set(["push", "pull_request", "pull_request_target", "merge_group"]);
+
+/**
+ * Narrows a run list to the runs this check is actually about.
+ *
+ * Three cases, and the third one is why this is not a one-liner:
+ *
+ * 1. There are deliberate runs. Judge those.
+ * 2. There are none, and everything left is ordinary CI. Then this workflow
+ *    has not run on a timer recently at all, which is a real thing to say but
+ *    a different thing from "the nightly went quiet". Falling back to judging
+ *    the CI runs produced a false alarm on a repo whose job is deliberately
+ *    skipped upstream and only meant to run on forks.
+ * 3. There are none, and the events are simply not recognized. Fall back and
+ *    judge everything, because reporting nothing at a project whose runs carry
+ *    an unfamiliar event would be the worse error.
+ */
+export function deliberateRuns(runs) {
+  const deliberate = runs.filter(run => !run.event || DELIBERATE_EVENTS.has(run.event));
+  if (deliberate.length > 0) return deliberate;
+  if (runs.every(run => CI_EVENTS.has(run.event))) return [];
+  return runs;
+}
+
 export function isConclusive(run) {
   return CONCLUSIVE.has(run?.conclusion);
 }
@@ -75,7 +122,17 @@ export function assessHeartbeat(runs, opts = {}) {
     };
   }
 
-  const ordered = [...runs].sort(
+  const deliberate = deliberateRuns([...runs]);
+  if (deliberate.length === 0) {
+    return {
+      ok: false,
+      code: "no-scheduled-runs",
+      message: `All ${runs.length} recent runs of this workflow were triggered by a push or a pull request, none by a schedule or a manual dispatch. Nothing here runs on a timer, so there is no nightly to be quiet. If that is deliberate, point the watchdog at a different workflow.`,
+      lastRunUrl: runs[0]?.html_url,
+    };
+  }
+
+  const ordered = deliberate.sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 

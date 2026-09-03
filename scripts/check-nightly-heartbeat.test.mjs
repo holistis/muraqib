@@ -110,6 +110,80 @@ test("a short gap is still bridged, so a stale check cannot hide behind one canc
   assert.equal(verdict.streak, 7);
 });
 
+test("a concurrency group cancelling its own PR runs is not an outage", () => {
+  // Found by running this against 40 public repositories with a nightly
+  // Playwright job. One came back as an inconclusive streak on 18 cancelled
+  // runs. Every one was a pull_request run cancelled by its own concurrency
+  // group after a newer push, with durations from 28 seconds to 32 minutes,
+  // and that workflow's cron was commented out entirely. Nothing was wrong.
+  // A check that flags healthy repos gets muted, which is the exact failure
+  // this file exists to prevent.
+  const runs = Array.from({ length: 18 }, (_, i) => ({
+    ...run("cancelled", 6 + i),
+    event: "pull_request",
+  }));
+  runs.push({ ...run("success", 30), event: "schedule" });
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, true);
+});
+
+test("scheduled runs going quiet is still an outage", () => {
+  // The other half of the same rule. Filtering must not swallow the real case.
+  const runs = Array.from({ length: 10 }, (_, i) => ({
+    ...run("cancelled", 6 + 24 * i),
+    event: "schedule",
+  }));
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, "no-conclusive-run");
+});
+
+test("a manual dispatch counts as deliberate, a push does not", () => {
+  const dispatched = [{ ...run("success", 6), event: "workflow_dispatch" }];
+  assert.equal(assessHeartbeat(dispatched, { now: NOW }).ok, true);
+
+  // A push run reporting green must not paper over a schedule that has stopped.
+  const runs = [
+    { ...run("success", 1), event: "push" },
+    { ...run("cancelled", 6), event: "schedule" },
+    { ...run("cancelled", 30), event: "schedule" },
+  ];
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, false);
+});
+
+test("runs with no event field are still judged, not silently dropped", () => {
+  // The Actions API always sets event, but a caller passing a trimmed list
+  // should get an answer rather than a false all-clear.
+  const runs = Array.from({ length: 5 }, (_, i) => run("cancelled", 6 + 24 * i));
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, false);
+});
+
+test("a workflow that only ever runs on push is reported as not on a timer", () => {
+  // Not the same as an outage, and saying so avoids a second cry-wolf. Found on
+  // a repo whose e2e job is deliberately skipped upstream and only meant to run
+  // on forks: every recent run was a pull_request, and judging those produced a
+  // no-conclusive-run alarm about a workflow that was behaving exactly as
+  // designed.
+  const runs = [
+    { ...run("skipped", 6), event: "pull_request" },
+    { ...run("skipped", 30), event: "pull_request" },
+    { ...run("failure", 54), event: "push" },
+  ];
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, "no-scheduled-runs");
+  assert.match(verdict.message, /Nothing here runs on a timer/);
+});
+
+test("an unrecognized event still gets judged rather than dismissed", () => {
+  // The fallback is for events this does not know, not for the CI events it
+  // deliberately excludes. Those two need different answers.
+  const runs = Array.from({ length: 8 }, (_, i) => ({
+    ...run("cancelled", 6 + 24 * i),
+    event: "repository_dispatch",
+  }));
+  assert.equal(assessHeartbeat(runs, { now: NOW }).code, "no-conclusive-run");
+});
+
 test("no runs at all is reported as never-ran, not as healthy", () => {
   const verdict = assessHeartbeat([], { now: NOW });
   assert.equal(verdict.ok, false);
