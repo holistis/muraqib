@@ -10,6 +10,8 @@
 # if the nightly's job timeout could hard-kill the run before Playwright stops
 # itself, which turns a slow suite into a silent "cancelled" that fires no
 # alert at all. That one ran unnoticed for over two months (see LESSONS.md).
+# And fails if a notification step could skip itself quietly, which is the same
+# bug one layer out: the step runs, decides it cannot send, and reports success.
 
 name: Muraqib Self-Check
 
@@ -31,3 +33,4 @@ jobs:
       - run: npm run check:workflows
       - run: npm run check:required-checks
       - run: npm run check:timeout-budget
+      - run: npm run check:alerting

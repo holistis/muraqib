@@ -2,6 +2,40 @@
 
 Running log of things this project got wrong and fixed, and why. Kept separate from SECURITY.md because not everything here is a security issue. Some of it is just "this broke in a way worth remembering."
 
+## 2026-09-03 (same day, found while testing the fix): none of the notification paths could ever have sent anything
+
+The watchdog above was deployed to the host project and run for real, to prove it worked. It gave the correct alarm. But its own log carried a second line nobody had asked about:
+
+```
+NOTE: no RESEND_API_KEY / MURAQIB_EMAIL_TO / MURAQIB_EMAIL_FROM, so no email was sent.
+```
+
+`RESEND_API_KEY` had never been set on that repository. Only two secrets existed there, both for the test account. So on top of a nightly that could not report, there was no way to email anyone about it even if it had.
+
+**Every notification path handled that by doing nothing and reporting success.** Three of them, written at different times, all reaching for the same instinct:
+
+| Where | What it did with a missing key |
+|---|---|
+| weekly digest | `console.log('key not found'); return;` job green |
+| fix workflow | `if: env.RESEND_API_KEY != ''` on the send step, step SKIPPED, job green |
+| auto-rollback | `if [ -n "$RESEND_API_KEY" ]; then ... fi`, nothing sent, job green |
+
+The digest log from 31 August says it in plain text: "RESEND_API_KEY niet gevonden, email overgeslagen". Twelve consecutive green Mondays since 15 June. Zero emails.
+
+None of the curl calls used `--fail` either, so even with a valid key an HTTP 401 from the provider would exit 0. A rejected message and a delivered one were indistinguishable.
+
+**And one that had never run at all.** The rollback alert built its JSON with a heredoc whose `EOF` terminator was indented. For `<<EOF` the delimiter must sit at column zero, so the heredoc never closed and bash reported a parse error. That step only runs during a real rollback, so it would have fallen over on precisely the day it was needed, and until that day it looked fine. Rewritten with `jq -n`, which also fixed `$ALERT_TO` and the commit hash going into the JSON unescaped, something SECURITY.md already forbids.
+
+**Why this is the same bug as the one above, not a new one.** A nightly hard-killed by a runner timeout cannot report, so nothing fires. A notification step that decides it cannot send and returns success does not report either. Both leave a green dashboard and an empty inbox. The first hides a failure to run; the second hides a failure to tell. Neither is distinguishable from a healthy system, which is the whole property that makes them dangerous.
+
+**What changed:** `scripts/check-alerting-not-silent.mjs` (+ 12 tests, wired into `self-check.yml` and into `npx muraqib doctor`). It scans every workflow for steps that talk to a delivery service and flags three shapes: a step-level `if:` on a secret being non-empty, a shell `if [ -n "$KEY" ]` wrapper, and a `github-script` sender that never calls `core.setFailed` and never throws, so it has no way to fail at all. It also flags a `curl` to such a host without `--fail` or `--fail-with-body`.
+
+Run against the host project's real workflow files, before and after, it finds all five problems in the broken versions and none in the fixed ones. It also found a fourth path nobody had looked at, a Telegram alert on the weekly database backup with the same wrapper, which no human had noticed in either review pass.
+
+It also found the same bug in this template's own `muraqib-claude-fix.yml`, which means every project that used this repo as a starting point shipped with a notification step that skips itself in silence.
+
+**Lesson:** for any step whose entire purpose is to tell a person something, "I could not send" and "I sent it" must not have the same exit code. Optional notifications are the trap: making a send conditional on its own credentials being present feels tidy and defensive, and it converts a missing secret from a loud setup error into a permanent, invisible one.
+
 ## 2026-09-03: the nightly had been cancelled every night for two months and nothing said a word
 
 The project this template was built for stopped being watched somewhere in late June. Nobody noticed until today, and nobody could have, because the failure mode removed its own alarm.

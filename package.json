@@ -1,6 +1,6 @@
 {
   "name": "muraqib",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Nightly Playwright QA that tells you when it stops watching. Claude opens the fix PR, a watchdog catches the nights nothing reported at all.",
   "license": "MIT",
   "author": "Abdellah Ouadoudi",
@@ -17,7 +17,8 @@
     "test:scripts": "node --test scripts/*.test.mjs bin/*.test.mjs",
     "check:timeout-budget": "node scripts/check-timeout-budget.mjs",
     "watchdog": "node scripts/watchdog.mjs",
-    "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget"
+    "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget && npm run check:alerting",
+    "check:alerting": "node scripts/check-alerting-not-silent.mjs"
   },
   "dependencies": {
     "yaml": "^2.5.0"

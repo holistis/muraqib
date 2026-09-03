@@ -62,6 +62,10 @@ Two things now close it:
 - `playwright.config.ts` sets `globalTimeout` below the job's `timeout-minutes`, so Playwright stops itself first and still writes a report. A slow suite fails loudly instead of vanishing. `npm run check:timeout-budget` fails the build if those two numbers ever drift back into the wrong order.
 - `muraqib-watchdog.yml` runs daily and asks one question: has the nightly produced a pass or a fail recently. It shouts if the recent runs were all cancelled, if nothing has reported inside the window, or if the workflow has no runs at all. It also flags a check that has been red for a week straight, because at that point it has stopped being an alert and become furniture.
 
+There is a third check for the same problem one layer out. A notification step that decides it cannot send, and returns success anyway, does not report either. `npx muraqib doctor` scans every workflow in the repo for steps that talk to a delivery service and flags the ones that can skip themselves quietly: an `if:` on a secret being non-empty, a shell `if [ -n "$KEY" ]` wrapper, a `github-script` sender that never calls `core.setFailed`, or a `curl` without `--fail` so an HTTP 401 still exits 0.
+
+That check exists because of a second incident on the same day, found while testing the first fix. The host project had never had its `RESEND_API_KEY` set, and all three of its notification paths responded to that by doing nothing and going green. Twelve consecutive Mondays of a weekly digest that sent no digest. See [LESSONS.md](LESSONS.md).
+
 The watchdog installs nothing. No dependencies, no npm step, just the Actions API and the fetch built into Node 20. Whatever watches the watchman needs fewer moving parts than the watchman.
 
 ## Setup
