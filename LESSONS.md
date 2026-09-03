@@ -2,6 +2,22 @@
 
 Running log of things this project got wrong and fixed, and why. Kept separate from SECURITY.md because not everything here is a security issue. Some of it is just "this broke in a way worth remembering."
 
+## 2026-09-03 (third pass): pointing the check at other people's repositories found two ways it cried wolf
+
+Every lesson above came from this project's own history, which is a narrow sample and a flattering one: the checks were written against the exact failures they were built for, so of course they matched. Running them against strangers is a different test.
+
+Forty public repositories with a nightly Playwright job, picked by GitHub code search for a workflow that runs `npx playwright test` on a cron with a `timeout-minutes`. The heartbeat check flagged sixteen. Two of those flags were wrong, and both were wrong in the direction that matters most here.
+
+**A concurrency group cancelling its own runs is not silence.** `openobserve/openobserve` came back as an inconclusive streak on 18 cancelled runs. Every one was a `pull_request` run cancelled by its own concurrency group after a newer push, durations ranging from 28 seconds to 32 minutes, and that workflow's cron is commented out entirely. `concurrency: cancel-in-progress: true` is a common and recommended setup, so this would have flagged a large number of perfectly healthy repositories. Fixed by judging deliberate runs only, `schedule` and `workflow_dispatch`.
+
+**A workflow that never runs on a timer is not a nightly that went quiet.** `weDevsOfficial/wp-user-frontend` came back as no-conclusive-run on 30 skipped runs. Its e2e job carries `if: github.repository != 'weDevsOfficial/...'`, so it is deliberately skipped upstream and only meant to run on forks. The fallback added an hour earlier caused this: it was written for runs carrying an unrecognized event, but it also caught the CI events that had just been deliberately excluded, so they were judged anyway. Those are two different situations and they now get two different answers.
+
+**Why these two matter more than an ordinary bug.** This project's entire argument is that a check which stops telling you the truth gets ignored, and an ignored check is the same as no check. A false alarm is that failure arriving from the other direction. Had either of these gone out as a bug report on someone else's repository, the tool would have disproved itself in public, in writing, on a permanent URL.
+
+**What the scan says about the problem, once the false alarms are gone.** Of 36 repositories with enough history to judge: 19 healthy, 8 with a nightly that has been red long enough to have become furniture, 6 that have not reported inside the window, 3 whose workflow does not actually run on a timer at all. So roughly two in five nightly Playwright checks in a random public sample are not currently telling anyone anything. Separately, GitHub code search reports about 163,000 `playwright.config.ts` files of which around 1,700 set `globalTimeout`, so about one percent have anything between their suite and a hard runner kill.
+
+**Lesson:** a check validated only against the incident that produced it has been tested on one sample, chosen after the fact, by the person who already knows the answer. The first honest measurement of a false-positive rate is the first time it runs somewhere its author did not write it for. Do that before it runs anywhere that matters, not after.
+
 ## 2026-09-03 (same day, found while testing the fix): none of the notification paths could ever have sent anything
 
 The watchdog above was deployed to the host project and run for real, to prove it worked. It gave the correct alarm. But its own log carried a second line nobody had asked about:
