@@ -161,8 +161,10 @@ If you want hosted, zero setup and support, this is not that. If you want the sa
 
 ## If you are running this
 
-I would genuinely like to know. Open an issue, or star the repo if it is doing something useful for you. Right now there is no way for me to tell whether this is helping anyone, and that makes it hard to know what to build next.
+For most of this project's life there was no counter on this page that could show whether anyone was actually using it. That was never fixed on purpose, it just never got done, and it meant I genuinely had no idea whether any of this was helping anyone.
 
-If it broke, that is even more useful. Open an issue with what happened.
+That is fixed now, and I would like to actually know. If Muraqib is running against your app and doing its job quietly, a star tells me that in a way I can see. I am working on this project continuously, and knowing what is actually useful is what tells me where to spend that time next.
+
+If it broke, that is even more useful than a star. Open an issue with what happened.
 
 MIT License.
