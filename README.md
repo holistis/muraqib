@@ -1,73 +1,132 @@
-# muraqib: zero-maintenance QA for solo SaaS founders
+# muraqib
 
-**Arabic: مُراقِب ("the guardian, the watchful one")**
+Arabic: مُراقِب, "the one who watches".
 
-Muraqib is a nightly QA system built for one-person software teams. It runs Playwright tests against your live app every night, lets Claude fix failing tests automatically, and sends you one weekly summary email. You only hear about it on Monday morning.
+Nightly Playwright tests against your live app. When something breaks, Claude opens a PR with a fix. Once a week you get one email. And when the nightly itself stops working, you get told, which is the part most setups quietly skip.
+
+MIT licensed. No hosted service, no monthly bill. It runs in your own GitHub Actions.
+
+## Start here
+
+Already have Muraqib, or any nightly Playwright setup, in a repo:
+
+```bash
+npx muraqib doctor
+```
+
+It reads your workflow and your Playwright config and tells you whether a slow night would fail loudly or just disappear. Takes about two seconds and installs nothing into your repo.
+
+Starting fresh:
+
+```bash
+npx muraqib init
+```
+
+Copies the template in. It never overwrites a file you already have, and it prints what it kept. Use `--dry-run` first if you want to see the list, and `--dir tools/muraqib` to keep it out of your project root.
 
 ## The problem it solves
 
-Solo founders can't afford a QA team. But silent regressions (a broken signup flow, a payment page that 404s, a broken PDF export) are invisible until a customer complains. Muraqib watches while you sleep.
+Solo founders cannot afford a QA team. Silent regressions can sit for weeks: a signup flow that broke on a dependency bump, a pricing page rendering NaN, a PDF export that 404s. Nobody files a ticket. The customer just leaves.
 
 ## How it works
 
+```text
+Nightly at 02:00 UTC   Playwright runs your flows against production
+                       |
+                       | tests fail
+                       v
+                       Claude reads the error, opens a PR with a fix
+                       |
+                       | CI passes on that PR
+                       v
+                       The PR waits for you (auto-merge is off by default)
+
+Every Monday          One digest email with the week's pass and fail history
+
+Every morning         A watchdog asks whether the nightly reported anything
+                      at all, and emails you if it did not
 ```
-Nightly (2am) → Playwright runs all tests against production
-               ↓ if tests fail
-               Claude reads the error, diagnoses it, opens a PR with the fix
-               ↓ if fix passes CI
-               PR waits for manual review by default, see "Auto-merge" below
-               ↓ always
-               Weekly digest email every Monday with pass/fail history
-```
 
-## Stack
+## The part that is actually different
 
-- **Playwright**: browser automation + test runner
-- **GitHub Actions**: nightly cron, dispatches the Claude fix workflow on failure
-- **Claude Code Action**: reads failing test output, writes the fix, opens a PR
-- **Resend**: failure/weekly digest email
+Every alert in a setup like this hangs off one thing: a test run that finished and reported. That leaves a whole category of failure with no alarm in it, because the trigger itself never fires.
 
-## What's in this repo
+A job hard-killed on `timeout-minutes` ends as "cancelled", not "failure", so every downstream step is skipped. GitHub silently stops schedules on repos with no pushes for 60 days. A secret expires and the job dies before the tests. Someone disables the workflow and forgets.
 
-| Path | What it does |
-|---|---|
-| `tests/` | Playwright test specs (you write these for your app) |
-| `tasks/` | Handwritten automation tasks |
-| `tasks/registry.ts` | Maps task names to handlers, no runtime AI, zero token cost |
-| `task-runner.ts` | CLI: `npm run task -- <name> --flags` |
-| `lib/selfHeal.ts` | Reference implementation of the Claude fix-prompt builder |
-| `.github/workflows/` | The nightly runner + the Claude auto-fix workflow, already wired |
+All four look identical from the outside. A run in the Actions tab every night, an empty inbox, and an app nobody is checking. That is worse than having no QA, because you have stopped looking yourself.
+
+This is not hypothetical. It happened here, to this project, for over two months. See the track record below.
+
+Two things now close it:
+
+- `playwright.config.ts` sets `globalTimeout` below the job's `timeout-minutes`, so Playwright stops itself first and still writes a report. A slow suite fails loudly instead of vanishing. `npm run check:timeout-budget` fails the build if those two numbers ever drift back into the wrong order.
+- `muraqib-watchdog.yml` runs daily and asks one question: has the nightly produced a pass or a fail recently. It shouts if the recent runs were all cancelled, if nothing has reported inside the window, or if the workflow has no runs at all. It also flags a check that has been red for a week straight, because at that point it has stopped being an alert and become furniture.
+
+The watchdog installs nothing. No dependencies, no npm step, just the Actions API and the fetch built into Node 20. Whatever watches the watchman needs fewer moving parts than the watchman.
 
 ## Setup
 
-1. Use this repo as a template (or clone it) into your own project.
-2. Edit `muraqib.config.ts`: set `baseUrl`, `projectName`, `flows`, and `alerting.emailTo`/`emailFrom`.
-3. Add secrets in your repo settings: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`.
-4. Write your Playwright specs in `tests/`, matching the `file` name in each flow.
-5. Leave `claudeIntegration.autoMerge` at its default (`false`) until you've read the "Auto-merge" section below.
+1. `npx muraqib init` in your repo.
+2. `npm install --save-dev @playwright/test dotenv && npx playwright install chromium`
+3. Edit `muraqib.config.ts`: `baseUrl`, `flows`, `alerting.emailTo` and `emailFrom`.
+4. Add repo secrets: `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `MURAQIB_EMAIL_TO`, `MURAQIB_EMAIL_FROM`.
+5. Write your Playwright specs in `tests/`, one file per flow in the config.
+6. `npx muraqib doctor` to confirm the alert path is live.
+
+## What is in here
+
+| Path | What it does |
+|---|---|
+| `tests/` | Your Playwright specs |
+| `muraqib.config.ts` | The only file you need to edit |
+| `scripts/watchdog.mjs` | Asks whether the nightly can still reach you |
+| `scripts/check-nightly-heartbeat.mjs` | The heartbeat rules, on their own, with tests |
+| `scripts/check-timeout-budget.mjs` | Fails the build if a slow night could go silent |
+| `scripts/check-sensitive-paths.mjs` | Backs the auto-merge guard, in code rather than a prompt |
+| `.github/workflows/` | The nightly, the fix workflow, the guard and the watchdog |
+| `tasks/registry.ts` | Handwritten automation tasks, no runtime AI, zero token cost |
 
 ## Auto-merge
 
-Default is off. Claude opens a PR, CI runs against it, and it waits for you to review and merge, the same as any other PR. This is deliberate: CI passing means the fix didn't break the tests it can see, not that the fix is correct.
+Off by default. Claude opens a PR, CI runs against it, and it waits for you to review and merge like any other PR. This is deliberate: CI passing means the fix did not break the tests it can see, not that the fix is correct.
 
-If you turn `autoMerge` on, two independent things keep it from touching payment/auth/migration/secrets code:
+If you turn `autoMerge` on, two independent things keep it away from payment, auth, migration and secrets code:
 
 1. The Claude fix prompt is instructed to leave those for manual review regardless of the setting. That is a text instruction a model reads.
 2. `.github/workflows/auto-merge-guard.yml` checks the actual changed files on any PR with auto-merge enabled and force-disables it if a sensitive path matches. That is code, not a prompt.
 
-Turning `autoMerge` on requires one manual setup step: add **"Muraqib Auto-Merge Guard / guard"** as a required status check in your repo's branch protection rules for `main`. Without that, the guard still runs and will disable auto-merge and comment if it catches something, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait for it. Auto-merge without both the guard and that setting is not a safety net, it's just skipping review. This repo has that setting configured on `main` as of 2026-08-29; if you fork or clone this for your own project, you need to add it yourself.
+Turning it on requires one manual step: add "Muraqib Auto-Merge Guard / guard" as a required status check in your branch protection rules for `main`. Without it the guard still runs and will comment, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait. Auto-merge without both the guard and that setting is not a safety net, it is just skipping review.
 
-## How this compares to a hosted service like Octomind
+## Track record
 
-Octomind offered a similar idea (nightly AI-assisted QA) as a paid, hosted product starting around $89/month, raised close to $5M, and shut down in April 2026 after about three years. That is a fact about their business model and funding runway, not proof nobody wants this. Testing does not get less important as more of a codebase gets written by an AI agent instead of a person, if anything the opposite. This project is not a hosted replacement for what they built, it is a different shape entirely: you clone it, it runs in your own GitHub Actions and your own Claude subscription, and there is no monthly bill because there is no service to bill for. The tradeoff is honest too, you set it up yourself (a config file, two secrets, your own test specs), instead of signing up and getting a dashboard.
+This section used to promise a public defect history and then not have one. Here is the real thing.
 
-If you want a hosted, zero-setup product with support, this is not that. If you want the same core idea for $0 and are fine reading a README, this repo is free and MIT licensed, and its full defect history (below) is public, not a claim.
+Running since 2 June 2026 against a live production app, 164 nightly runs so far. Four incidents are written up in full in [LESSONS.md](LESSONS.md), including what was wrong, how it was actually verified as fixed rather than assumed, and what regression check now stops it coming back. Every one of them is a bug in Muraqib itself, found by using it. Security-relevant fixes have their own changelog in [SECURITY.md](SECURITY.md).
+
+The most recent one is the least flattering and the most useful. Of those 164 runs, 7 succeeded, 76 failed, and 81 were cancelled, the last 60-plus consecutively. The job's `timeout-minutes` was killing the suite at 20 minutes, and because a cancelled run fires no alert, nothing said a word for over two months. The guard had gone quiet and the quiet looked exactly like everything being fine.
+
+Both of the checks described further up exist because of that, and `npx muraqib doctor` was written so anyone already running this can find the same problem in their own repo in one command instead of two months.
+
+## Compared to a hosted service
+
+Octomind offered a similar idea, nightly AI-assisted QA, as a hosted product from around $89 a month. They raised close to $5M and shut down in April 2026 after about three years. That is a fact about their business model and their runway, not proof that nobody wants this. Testing does not get less important as more code gets written by an agent instead of a person. If anything it is the other way round.
+
+This is a different shape entirely. You install it, it runs in your GitHub Actions on your Claude key, and there is no monthly bill because there is no service to bill for. The tradeoff is honest too: you set it up yourself, a config file, four secrets and your own specs, instead of signing up and getting a dashboard.
+
+If you want hosted, zero setup and support, this is not that. If you want the same core idea for nothing and are fine reading a README, this is free and the full defect history above is public.
 
 ## Design principles
 
-- **Tasks are always handwritten**: no runtime AI generates or executes tasks. Writing a new handler is one-time Claude work. Running it costs 0 tokens.
-- **You get one email per week**, plus one on the night something actually breaks. Not one per failed test. Signal, not noise.
-- **Test failure text is data, not instructions**: the Claude fix prompt explicitly labels error output as untrusted, and never lets it decide the auto-merge outcome.
-- **Auto-merge is opt-in and scoped**: off by default, and even when on, payment/auth/migration/secrets changes always wait for a human.
+- Tasks are always handwritten. No runtime AI generates or executes tasks. Writing a new handler is one-time Claude work. Running it costs zero tokens.
+- One email a week, plus one on the night something actually breaks. Not one per failed test. Signal, not noise.
+- Test failure text is data, not instructions. The Claude fix prompt labels error output as untrusted and never lets it decide the auto-merge outcome.
+- Auto-merge is opt-in and scoped. Off by default, and even when on, payment, auth, migration and secrets changes always wait for a human.
+- A check that cannot be read is treated as broken, not as fine. Every guard in here fails closed on input it cannot parse.
+
+## If you are running this
+
+I would genuinely like to know. Open an issue, or star the repo if it is doing something useful for you. Right now there is no way for me to tell whether this is helping anyone, and that makes it hard to know what to build next.
+
+If it broke, that is even more useful. Open an issue with what happened.
 
 MIT License.

@@ -5,6 +5,28 @@
 import { defineConfig, devices } from "@playwright/test";
 import qaConfig from "./muraqib.config";
 
+/**
+ * How long the whole run may take before Playwright stops itself.
+ *
+ * This exists because of a specific failure mode. The nightly job carries a
+ * runner-level `timeout-minutes`. That is a hard kill: the process is stopped
+ * mid-test, Playwright writes no report, GitHub records the run as "cancelled"
+ * rather than "failure", and every downstream step is skipped because they all
+ * key off the tests step reporting failure. No fix PR, no failing job, no
+ * email. The guardian goes quiet exactly when it has something to say, and
+ * stays quiet every night after that.
+ *
+ * globalTimeout makes Playwright stop itself first. It exits non-zero, the
+ * reporters still write results.json, and the whole downstream chain fires
+ * normally, so a suite that got too slow reads as a loud failure instead of
+ * silence.
+ *
+ * It MUST stay below the job's timeout-minutes in muraqib-nightly.yml, with
+ * enough room left for the install and upload steps around it.
+ * scripts/check-timeout-budget.mjs fails the build if that ever drifts.
+ */
+const GLOBAL_TIMEOUT_MINUTES = Number(process.env.MURAQIB_GLOBAL_TIMEOUT_MIN ?? 35);
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
@@ -31,6 +53,7 @@ export default defineConfig({
     },
   ],
   outputDir: "./test-results",
+  globalTimeout: GLOBAL_TIMEOUT_MINUTES * 60 * 1000,
   timeout: 60 * 1000,
   expect: { timeout: 10 * 1000 },
 });

@@ -6,7 +6,10 @@
 # shipped in this repo's first commit (see SECURITY.md). Also fails if the
 # auto-merge-guard job carries a job-level if:, which makes it report SKIPPED
 # instead of pass/fail and permanently blocks merging under required-status-
-# checks. That exact bug shipped on 2026-08-29 (see SECURITY.md).
+# checks. That exact bug shipped on 2026-08-29 (see SECURITY.md). Also fails
+# if the nightly's job timeout could hard-kill the run before Playwright stops
+# itself, which turns a slow suite into a silent "cancelled" that fires no
+# alert at all. That one ran unnoticed for over two months (see LESSONS.md).
 
 name: Muraqib Self-Check
 
@@ -27,3 +30,4 @@ jobs:
       - run: npm run test:scripts
       - run: npm run check:workflows
       - run: npm run check:required-checks
+      - run: npm run check:timeout-budget
