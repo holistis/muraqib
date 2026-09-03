@@ -122,10 +122,25 @@ export function assessHeartbeat(runs, opts = {}) {
     };
   }
 
+  // A cancelled night is not a pass, so one or two of them in the middle must
+  // not reset this counter and buy another week of being ignored. But skipping
+  // them without limit is wrong in the other direction: it would join failures
+  // on either side of a two month silence and then report them as having
+  // happened "in a row", which is simply not true. The message here makes a
+  // factual claim, so the counter has to be able to back it up.
+  //
+  // The tolerance is the same one used for the head-of-list streak above. Past
+  // it, the run of failures is genuinely broken by a gap and stops counting.
   let failureStreak = 0;
+  let bridged = 0;
   for (const run of ordered) {
-    if (!isConclusive(run)) continue;
+    if (!isConclusive(run)) {
+      bridged += 1;
+      if (bridged > maxConsecutiveInconclusive) break;
+      continue;
+    }
     if (run.conclusion !== "failure") break;
+    bridged = 0;
     failureStreak += 1;
   }
   if (failureStreak >= maxConsecutiveFailures) {
