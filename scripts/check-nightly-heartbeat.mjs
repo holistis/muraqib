@@ -51,15 +51,31 @@ const CONCLUSIVE = new Set(["success", "failure"]);
 const DELIBERATE_EVENTS = new Set(["schedule", "workflow_dispatch"]);
 
 /**
+ * Events that are ordinary CI rather than a timer, and are excluded on purpose.
+ * Separated from "unrecognized" so the two can be treated differently below.
+ */
+const CI_EVENTS = new Set(["push", "pull_request", "pull_request_target", "merge_group"]);
+
+/**
  * Narrows a run list to the runs this check is actually about.
  *
- * Falls back to the full list when nothing is left, rather than reporting
- * "never ran" at a project whose runs simply carry an event this does not
- * recognize. Being wrong quietly in that direction would be the worse error.
+ * Three cases, and the third one is why this is not a one-liner:
+ *
+ * 1. There are deliberate runs. Judge those.
+ * 2. There are none, and everything left is ordinary CI. Then this workflow
+ *    has not run on a timer recently at all, which is a real thing to say but
+ *    a different thing from "the nightly went quiet". Falling back to judging
+ *    the CI runs produced a false alarm on a repo whose job is deliberately
+ *    skipped upstream and only meant to run on forks.
+ * 3. There are none, and the events are simply not recognized. Fall back and
+ *    judge everything, because reporting nothing at a project whose runs carry
+ *    an unfamiliar event would be the worse error.
  */
 export function deliberateRuns(runs) {
   const deliberate = runs.filter(run => !run.event || DELIBERATE_EVENTS.has(run.event));
-  return deliberate.length > 0 ? deliberate : runs;
+  if (deliberate.length > 0) return deliberate;
+  if (runs.every(run => CI_EVENTS.has(run.event))) return [];
+  return runs;
 }
 
 export function isConclusive(run) {
@@ -106,7 +122,17 @@ export function assessHeartbeat(runs, opts = {}) {
     };
   }
 
-  const ordered = deliberateRuns([...runs]).sort(
+  const deliberate = deliberateRuns([...runs]);
+  if (deliberate.length === 0) {
+    return {
+      ok: false,
+      code: "no-scheduled-runs",
+      message: `All ${runs.length} recent runs of this workflow were triggered by a push or a pull request, none by a schedule or a manual dispatch. Nothing here runs on a timer, so there is no nightly to be quiet. If that is deliberate, point the watchdog at a different workflow.`,
+      lastRunUrl: runs[0]?.html_url,
+    };
+  }
+
+  const ordered = deliberate.sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 

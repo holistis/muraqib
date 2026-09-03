@@ -157,10 +157,31 @@ test("runs with no event field are still judged, not silently dropped", () => {
   assert.equal(assessHeartbeat(runs, { now: NOW }).ok, false);
 });
 
-test("a repo with only push runs falls back rather than reporting never-ran", () => {
-  const runs = [{ ...run("failure", 6), event: "push" }, { ...run("failure", 30), event: "push" }];
+test("a workflow that only ever runs on push is reported as not on a timer", () => {
+  // Not the same as an outage, and saying so avoids a second cry-wolf. Found on
+  // a repo whose e2e job is deliberately skipped upstream and only meant to run
+  // on forks: every recent run was a pull_request, and judging those produced a
+  // no-conclusive-run alarm about a workflow that was behaving exactly as
+  // designed.
+  const runs = [
+    { ...run("skipped", 6), event: "pull_request" },
+    { ...run("skipped", 30), event: "pull_request" },
+    { ...run("failure", 54), event: "push" },
+  ];
   const verdict = assessHeartbeat(runs, { now: NOW });
-  assert.equal(verdict.code, "healthy");
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, "no-scheduled-runs");
+  assert.match(verdict.message, /Nothing here runs on a timer/);
+});
+
+test("an unrecognized event still gets judged rather than dismissed", () => {
+  // The fallback is for events this does not know, not for the CI events it
+  // deliberately excludes. Those two need different answers.
+  const runs = Array.from({ length: 8 }, (_, i) => ({
+    ...run("cancelled", 6 + 24 * i),
+    event: "repository_dispatch",
+  }));
+  assert.equal(assessHeartbeat(runs, { now: NOW }).code, "no-conclusive-run");
 });
 
 test("no runs at all is reported as never-ran, not as healthy", () => {
