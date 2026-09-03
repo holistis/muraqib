@@ -101,6 +101,18 @@ If you turn `autoMerge` on, two independent things keep it away from payment, au
 
 Turning it on requires one manual step: add "Muraqib Auto-Merge Guard / guard" as a required status check in your branch protection rules for `main`. Without it the guard still runs and will comment, but GitHub's native auto-merge can complete before the guard job does. A required status check is what makes GitHub wait. Auto-merge without both the guard and that setting is not a safety net, it is just skipping review.
 
+## A note on this repo's own Actions tab
+
+The nightly, the watchdog and the fix workflow are disabled here, and that is deliberate rather than an oversight.
+
+This repository has no app to watch. Its `muraqib.config.ts` points at a placeholder, so its nightly failed on every single run, 81 out of 81, and its watchdog would now report that streak as furniture every morning. Which is correct, and it is exactly the thing this project tells you not to live with, so leaving it running to look busy would be dishonest.
+
+What runs here instead is `self-check.yml`: the tests for this template's own code, and the four checks that keep the failure modes above from coming back. `npx muraqib init` enables the monitoring workflows in your repository, where there is something to monitor.
+
+Related: the nightly no longer triggers on a push to `main`. The project this template came from removed that trigger months ago, because every merge kicked off a full 25 to 45 minute Playwright run against production for no information the nightly schedule would not give a few hours later. That lesson had never made it back into the template.
+
+And if `baseUrl` is still the shipped placeholder, the run now fails immediately and says so, rather than producing DNS and navigation errors that read like a broken tool. An unconfigured monitor is not a passing monitor.
+
 ## Track record
 
 This section used to promise a public defect history and then not have one. Here is the real thing.

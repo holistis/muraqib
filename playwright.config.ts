@@ -27,6 +27,26 @@ import qaConfig from "./muraqib.config";
  */
 const GLOBAL_TIMEOUT_MINUTES = Number(process.env.MURAQIB_GLOBAL_TIMEOUT_MIN ?? 35);
 
+/**
+ * The value muraqib.config.ts ships with. If it is still here, nothing has been
+ * pointed at a real app yet.
+ *
+ * Left alone, a run against this placeholder fails with DNS and navigation
+ * errors that say nothing about the actual problem, and someone new reasonably
+ * reads that as "the tool is broken" rather than "I have not finished setup".
+ * Worse, it is a red nightly from day one, and a check that is red from day one
+ * is furniture before it has ever been useful.
+ *
+ * Failing here instead, with the reason, keeps that loud and correct. Not
+ * skipping: an unconfigured monitor is not a passing monitor.
+ */
+const PLACEHOLDER_BASE_URL = "https://your-app.com";
+if (qaConfig.baseUrl === PLACEHOLDER_BASE_URL) {
+  throw new Error(
+    `muraqib.config.ts still points baseUrl at ${PLACEHOLDER_BASE_URL}. Set it to your live app, or set QA_BASE_URL in the environment. Until then nothing is being checked, and this fails rather than passing so that stays obvious.`
+  );
+}
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,

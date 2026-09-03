@@ -16,9 +16,11 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - main
+  # No push trigger on purpose. The project this template came from had one and
+  # removed it: every merge to main kicked off a full 25 to 45 minute Playwright
+  # run against production, which costs runner minutes and tells you nothing the
+  # nightly schedule will not tell you a few hours later. That lesson never made
+  # it back here until now. If you want a run after a deploy, dispatch it.
 
 jobs:
   test:
