@@ -176,6 +176,9 @@ jobs:
               "Default is manual review: leave the PR open, do not enable auto-merge, and say so in the PR body.",
               "Only enable auto-merge (squash) if the repo owner has explicitly turned on `claudeIntegration.autoMerge`",
               "in `muraqib.config.ts` AND the fix does not touch anything listed in \"Do NOT\" above.",
+              "",
+              "---",
+              "Opened automatically by [Muraqib](https://github.com/holistis/muraqib), a nightly Playwright watchdog.",
             ];
             const body = bodyLines.join("\n");
 
