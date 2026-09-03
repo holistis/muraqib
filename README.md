@@ -33,7 +33,7 @@ Copies the template in. It never overwrites a file you already have, and it prin
 Or as a step in a workflow you already have, which is the cheapest way to keep the answer honest over time:
 
 ```yaml
-- uses: holistis/muraqib@v0.3.1
+- uses: holistis/muraqib@v0.3.3
   with:
     dir: .          # where your playwright.config lives, if not the repo root
 ```
