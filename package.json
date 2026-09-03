@@ -1,6 +1,6 @@
 {
   "name": "muraqib",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Nightly Playwright QA that tells you when it stops watching. Claude opens the fix PR, a watchdog catches the nights nothing reported at all.",
   "license": "MIT",
   "author": "Abdellah Ouadoudi",

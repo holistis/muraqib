@@ -31,6 +31,37 @@
 /** GitHub conclusions that mean the run actually finished and said something. */
 const CONCLUSIVE = new Set(["success", "failure"]);
 
+/**
+ * Events that mean somebody, or a schedule, deliberately asked for this run.
+ *
+ * Runs triggered by a push or a pull request are a different animal, and
+ * counting them here produces false alarms. A workflow with
+ * `concurrency: cancel-in-progress: true`, which is a common and recommended
+ * setup, cancels its own older runs every time someone pushes again. Those
+ * cancellations are the feature working. Reading them as "the nightly went
+ * quiet" would flag healthy repositories, and a check that cries wolf gets
+ * muted, which is the exact failure this file exists to prevent.
+ *
+ * Found by running this against 40 public repositories with a nightly
+ * Playwright job. One of them, openobserve, came back as an inconclusive
+ * streak on 18 cancelled runs. Every one was a pull_request run cancelled by
+ * its concurrency group, with durations from 28 seconds to 32 minutes, and
+ * that workflow's cron was commented out. Nothing was wrong there at all.
+ */
+const DELIBERATE_EVENTS = new Set(["schedule", "workflow_dispatch"]);
+
+/**
+ * Narrows a run list to the runs this check is actually about.
+ *
+ * Falls back to the full list when nothing is left, rather than reporting
+ * "never ran" at a project whose runs simply carry an event this does not
+ * recognize. Being wrong quietly in that direction would be the worse error.
+ */
+export function deliberateRuns(runs) {
+  const deliberate = runs.filter(run => !run.event || DELIBERATE_EVENTS.has(run.event));
+  return deliberate.length > 0 ? deliberate : runs;
+}
+
 export function isConclusive(run) {
   return CONCLUSIVE.has(run?.conclusion);
 }
@@ -75,7 +106,7 @@ export function assessHeartbeat(runs, opts = {}) {
     };
   }
 
-  const ordered = [...runs].sort(
+  const ordered = deliberateRuns([...runs]).sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 

@@ -110,6 +110,59 @@ test("a short gap is still bridged, so a stale check cannot hide behind one canc
   assert.equal(verdict.streak, 7);
 });
 
+test("a concurrency group cancelling its own PR runs is not an outage", () => {
+  // Found by running this against 40 public repositories with a nightly
+  // Playwright job. One came back as an inconclusive streak on 18 cancelled
+  // runs. Every one was a pull_request run cancelled by its own concurrency
+  // group after a newer push, with durations from 28 seconds to 32 minutes,
+  // and that workflow's cron was commented out entirely. Nothing was wrong.
+  // A check that flags healthy repos gets muted, which is the exact failure
+  // this file exists to prevent.
+  const runs = Array.from({ length: 18 }, (_, i) => ({
+    ...run("cancelled", 6 + i),
+    event: "pull_request",
+  }));
+  runs.push({ ...run("success", 30), event: "schedule" });
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, true);
+});
+
+test("scheduled runs going quiet is still an outage", () => {
+  // The other half of the same rule. Filtering must not swallow the real case.
+  const runs = Array.from({ length: 10 }, (_, i) => ({
+    ...run("cancelled", 6 + 24 * i),
+    event: "schedule",
+  }));
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, "no-conclusive-run");
+});
+
+test("a manual dispatch counts as deliberate, a push does not", () => {
+  const dispatched = [{ ...run("success", 6), event: "workflow_dispatch" }];
+  assert.equal(assessHeartbeat(dispatched, { now: NOW }).ok, true);
+
+  // A push run reporting green must not paper over a schedule that has stopped.
+  const runs = [
+    { ...run("success", 1), event: "push" },
+    { ...run("cancelled", 6), event: "schedule" },
+    { ...run("cancelled", 30), event: "schedule" },
+  ];
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, false);
+});
+
+test("runs with no event field are still judged, not silently dropped", () => {
+  // The Actions API always sets event, but a caller passing a trimmed list
+  // should get an answer rather than a false all-clear.
+  const runs = Array.from({ length: 5 }, (_, i) => run("cancelled", 6 + 24 * i));
+  assert.equal(assessHeartbeat(runs, { now: NOW }).ok, false);
+});
+
+test("a repo with only push runs falls back rather than reporting never-ran", () => {
+  const runs = [{ ...run("failure", 6), event: "push" }, { ...run("failure", 30), event: "push" }];
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  assert.equal(verdict.code, "healthy");
+});
+
 test("no runs at all is reported as never-ran, not as healthy", () => {
   const verdict = assessHeartbeat([], { now: NOW });
   assert.equal(verdict.ok, false);
