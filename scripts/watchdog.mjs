@@ -169,39 +169,65 @@ async function sendAlert(subject, body) {
 
 async function main() {
   const repo = process.env.GITHUB_REPOSITORY || "this repo";
-  const { runs, note } = await fetchNightlyRuns();
 
-  const verdict = assessHeartbeat(runs, {
-    now: Date.now(),
-    maxQuietHours: optionalNumber("MURAQIB_MAX_QUIET_HOURS"),
-    maxConsecutiveInconclusive: optionalNumber("MURAQIB_MAX_CANCELS"),
-    maxConsecutiveFailures: optionalNumber("MURAQIB_MAX_FAILURES"),
-  });
+  // Found 2026-09-03: everything from here down used to run with no try/catch
+  // of its own, so a thrown error (a network failure or a timeout on the fetch
+  // in fetchNightlyRuns, or anything else unexpected) skipped straight past
+  // sendAlert() to the top-level main().catch() below, which only logs to the
+  // Actions log and sets exitCode. That fails the job, which is visible in
+  // Actions, but never reaches a person through the channels this whole script
+  // exists to guarantee, exactly the failure mode it was built to catch one
+  // layer out. A watchdog that can silently stop watching because of its own
+  // bug is the same shape of bug as the one it watches for.
+  try {
+    const { runs, note } = await fetchNightlyRuns();
 
-  if (verdict.ok) {
-    console.log(`OK: ${verdict.message}`);
-    return;
+    const verdict = assessHeartbeat(runs, {
+      now: Date.now(),
+      maxQuietHours: optionalNumber("MURAQIB_MAX_QUIET_HOURS"),
+      maxConsecutiveInconclusive: optionalNumber("MURAQIB_MAX_CANCELS"),
+      maxConsecutiveFailures: optionalNumber("MURAQIB_MAX_FAILURES"),
+    });
+
+    if (verdict.ok) {
+      console.log(`OK: ${verdict.message}`);
+      return;
+    }
+
+    const lines = [
+      `Muraqib's nightly check on ${repo} is not reaching you.`,
+      "",
+      verdict.message,
+      note ? `\n${note}` : "",
+      verdict.lastRunUrl ? `\nMost recent run: ${verdict.lastRunUrl}` : "",
+      "",
+      "This email exists because the nightly's own alerts cannot fire in this state. Nothing is claiming your app is broken. The point is that nothing would be able to tell you if it were.",
+    ].filter(Boolean);
+
+    const body = lines.join("\n");
+    console.error(`WATCHDOG: ${verdict.code}`);
+    console.error(body);
+
+    await sendAlert(`Muraqib is not watching ${repo}`, body);
+    process.exitCode = 1;
+  } catch (err) {
+    const body = [
+      `The watchdog itself failed while checking ${repo}, before it could reach a verdict: ${err.message}`,
+      "",
+      "This is not a claim that your app is broken or healthy. It is the watchdog crashing, which is exactly the state where you most need to hear from it.",
+    ].join("\n");
+    console.error(`WATCHDOG: crashed`);
+    console.error(body);
+    await sendAlert(`Muraqib's watchdog crashed while checking ${repo}`, body);
+    process.exitCode = 1;
   }
-
-  const lines = [
-    `Muraqib's nightly check on ${repo} is not reaching you.`,
-    "",
-    verdict.message,
-    note ? `\n${note}` : "",
-    verdict.lastRunUrl ? `\nMost recent run: ${verdict.lastRunUrl}` : "",
-    "",
-    "This email exists because the nightly's own alerts cannot fire in this state. Nothing is claiming your app is broken. The point is that nothing would be able to tell you if it were.",
-  ].filter(Boolean);
-
-  const body = lines.join("\n");
-  console.error(`WATCHDOG: ${verdict.code}`);
-  console.error(body);
-
-  await sendAlert(`Muraqib is not watching ${repo}`, body);
-  process.exitCode = 1;
 }
 
 main().catch(err => {
+  // Reachable only if sendAlert() itself throws synchronously in a way the
+  // catch above didn't already handle, or main() throws before entering the
+  // try block. Kept as the last-resort backstop, matching the file's original
+  // shape, see the comment at the top on why this uses exitCode not exit().
   console.error(`FAILED: ${err.message}`);
   process.exitCode = 1;
 });
