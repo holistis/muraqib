@@ -82,6 +82,34 @@ test("a cancel in the middle does not hide an ongoing failure streak", () => {
   assert.equal(verdict.streak, 7);
 });
 
+test("a long silence breaks the streak instead of being bridged", () => {
+  // The real history that prompted this: a burst of failures in June, then two
+  // months of cancelled runs, then one fresh failure. Skipping inconclusive
+  // runs without limit would splice those together and report "failed 8 runs in
+  // a row", which never happened. The message states a fact, so the counter has
+  // to be able to stand behind it.
+  const runs = [
+    run("failure", 6),
+    ...Array.from({ length: 20 }, (_, i) => run("cancelled", 30 + 24 * i)),
+    ...Array.from({ length: 7 }, (_, i) => run("failure", 520 + 24 * i)),
+  ];
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  // The head of the list is a real report, so the alert path is live. The old
+  // failures on the far side of the gap are history, not a current streak.
+  assert.equal(verdict.ok, true);
+});
+
+test("a short gap is still bridged, so a stale check cannot hide behind one cancel", () => {
+  const runs = [
+    run("failure", 6),
+    run("cancelled", 30),
+    ...Array.from({ length: 6 }, (_, i) => run("failure", 54 + 24 * i)),
+  ];
+  const verdict = assessHeartbeat(runs, { now: NOW });
+  assert.equal(verdict.code, "furniture");
+  assert.equal(verdict.streak, 7);
+});
+
 test("no runs at all is reported as never-ran, not as healthy", () => {
   const verdict = assessHeartbeat([], { now: NOW });
   assert.equal(verdict.ok, false);
