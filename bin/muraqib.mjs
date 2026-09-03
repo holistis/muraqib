@@ -103,7 +103,17 @@ export function parseArgs(argv) {
     // Normalize to a forward-slash relative path. It ends up inside YAML that
     // runs on a Linux runner, so a Windows-style path written here would be
     // copied through and break there rather than on the machine that typed it.
-    args.dir = args.dir.split(/[\\/]+/).filter(part => part && part !== ".").join("/");
+    const parts = args.dir.split(/[\\/]+/).filter(part => part && part !== ".");
+    // Found 2026-09-03: this filter dropped "." but never ".." , so
+    // `--dir ../../etc` normalized to "../../etc" unchanged, and every write
+    // below (join(target, args.dir, file)) resolved outside the target
+    // directory (CWE-22). Reject it loudly instead of silently stripping it,
+    // stripping would put the files somewhere the user didn't ask for without
+    // telling them.
+    if (parts.includes("..")) {
+      throw new Error(`--dir ${args.dir} would escape the target directory (contains "..").`);
+    }
+    args.dir = parts.join("/");
     if (args.dir === "") args.dir = ".";
   }
   return args;

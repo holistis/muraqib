@@ -22,6 +22,19 @@ on:
   # nightly schedule will not tell you a few hours later. That lesson never made
   # it back here until now. If you want a run after a deploy, dispatch it.
 
+# Found 2026-09-03: with no concurrency group, a manual dispatch overlapping the
+# scheduled run (or two dispatches close together) can produce two nightly runs
+# in flight at once. Each failing run independently triggers muraqib-claude-fix.yml,
+# which opens its own GitHub Issue for the same underlying failure. Confirmed live
+# on this repo: 19 open, never-closed duplicate issues in 4.5 days. cancel-in-progress
+# is deliberately false: cancelling the older run would recreate the exact
+# "cancelled reads as silence, not failure" bug this project exists to catch,
+# queueing is safe here because a nightly run finishing a few minutes late is not
+# an incident.
+concurrency:
+  group: muraqib-nightly
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -54,7 +67,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
@@ -98,8 +111,26 @@ jobs:
             let summary = "Test results JSON not found.";
             if (fs.existsSync(path)) {
               const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-              const failed = (data.suites || []).flatMap(s => (s.specs || []).flatMap(sp => sp.tests || []))
-                .filter(t => t.status === "failed" || (t.results || []).some(r => r.status === "failed"));
+              // Playwright nests an extra suites layer per test.describe(), so a
+              // flat one-level flatMap misses every test inside a describe() and
+              // undercounts, down to "0 test(s) failed" in the worst case. This
+              // exact bug was already found and fixed with a recursive walk in
+              // muraqib-claude-fix.yml (see the "Build issue body" step there) on
+              // 2026-08-28, but the fix was never applied here, in the sibling
+              // file that computes the short summary text for the same run.
+              // Found again 2026-09-03, walk recursively here too.
+              const failed = [];
+              function walkSuite(suite) {
+                for (const spec of suite.specs || []) {
+                  for (const test of spec.tests || []) {
+                    if (test.status === "failed" || (test.results || []).some(r => r.status === "failed")) {
+                      failed.push(test);
+                    }
+                  }
+                }
+                for (const child of suite.suites || []) walkSuite(child);
+              }
+              (data.suites || []).forEach(walkSuite);
               summary = `${failed.length} test(s) failed.`;
             }
             await github.rest.actions.createWorkflowDispatch({
