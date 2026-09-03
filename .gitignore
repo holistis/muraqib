@@ -4,3 +4,6 @@ playwright-report/
 playwright/.cache/
 .env
 .env.local
+data-scan-result.json
+scan.log
+zizmor-results/
