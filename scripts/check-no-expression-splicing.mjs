@@ -14,12 +14,24 @@
  *
  * Run: node scripts/check-no-expression-splicing.mjs
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseAllDocuments } from "yaml";
 
 const WORKFLOWS_DIRS = [".github/workflows"];
+
+/**
+ * Composite actions at the repo root, checked for the same thing.
+ *
+ * An action.yml carries run bodies exactly like a workflow does, and it is the
+ * more dangerous of the two: a workflow runs in this repo, an action runs in
+ * everybody else's. Its `inputs.*` are supplied by whoever calls it, which on a
+ * fork pull request means someone with no access to the repo at all. Splicing
+ * one of those into a shell string is the same bug this file exists for, shipped
+ * to strangers. It was outside the scan until action.yml was added.
+ */
+const ROOT_ACTION_FILES = ["action.yml", "action.yaml"];
 const EXPRESSION = /\$\{\{/;
 
 function collectScriptBodies(node, path, out) {
@@ -76,17 +88,24 @@ function main() {
   let injectionCount = 0;
   let parseErrorCount = 0;
 
+  const targets = [];
   for (const dir of WORKFLOWS_DIRS) {
     const absDir = join(repoRoot, dir);
-    let files;
     try {
-      files = readdirSync(absDir).filter(f => f.endsWith(".yml") || f.endsWith(".yaml"));
+      for (const file of readdirSync(absDir).filter(f => f.endsWith(".yml") || f.endsWith(".yaml"))) {
+        targets.push(join(absDir, file));
+      }
     } catch {
       continue; // dir may not exist in every checkout
     }
+  }
+  for (const file of ROOT_ACTION_FILES) {
+    const fullPath = join(repoRoot, file);
+    if (existsSync(fullPath)) targets.push(fullPath);
+  }
 
-    for (const file of files) {
-      const fullPath = join(absDir, file);
+  {
+    for (const fullPath of targets) {
       const content = readFileSync(fullPath, "utf8");
       const findings = findExpressionSplices(content, fullPath);
       filesScanned++;

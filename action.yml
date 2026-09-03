@@ -1,0 +1,36 @@
+name: "Muraqib Doctor"
+description: "Fail the build if your nightly Playwright job can stop reaching you without saying so."
+author: "Abdellah Ouadoudi"
+
+branding:
+  icon: "eye"
+  color: "blue"
+
+inputs:
+  dir:
+    description: >
+      Where your playwright.config lives, relative to the repo root. Leave at "."
+      unless Muraqib sits in a subdirectory such as tools/muraqib.
+    required: false
+    default: "."
+  version:
+    description: >
+      Which published version of muraqib to run. Pinning a version keeps the
+      check from changing under you on a release. "latest" always runs the
+      newest one.
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check the nightly can still reach a person
+      shell: bash
+      # Inputs arrive as env, never spliced into this run body. A workflow input
+      # is attacker-controlled on a fork PR, and a value containing a quote or
+      # $(...) spliced into a shell string runs as a command. Same rule the rest
+      # of this repo follows, see SECURITY.md.
+      env:
+        MURAQIB_DIR: ${{ inputs.dir }}
+        MURAQIB_VERSION: ${{ inputs.version }}
+      run: npx --yes "muraqib@$MURAQIB_VERSION" doctor --dir "$MURAQIB_DIR"

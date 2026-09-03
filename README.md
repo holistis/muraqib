@@ -1,5 +1,11 @@
 # muraqib
 
+[![npm](https://img.shields.io/npm/v/muraqib?label=npm)](https://www.npmjs.com/package/muraqib)
+[![downloads](https://img.shields.io/npm/dm/muraqib?label=downloads%2Fmonth)](https://www.npmjs.com/package/muraqib)
+[![stars](https://img.shields.io/github/stars/holistis/muraqib?label=stars)](https://github.com/holistis/muraqib/stargazers)
+[![forks](https://img.shields.io/github/forks/holistis/muraqib?label=forks)](https://github.com/holistis/muraqib/forks)
+[![license](https://img.shields.io/npm/l/muraqib?label=license)](LICENSE)
+
 Arabic: مُراقِب, "the one who watches".
 
 Nightly Playwright tests against your live app. When something breaks, Claude opens a PR with a fix. Once a week you get one email. And when the nightly itself stops working, you get told, which is the part most setups quietly skip.
@@ -23,6 +29,16 @@ npx muraqib init
 ```
 
 Copies the template in. It never overwrites a file you already have, and it prints what it kept. Use `--dry-run` first if you want to see the list, and `--dir tools/muraqib` to keep it out of your project root.
+
+Or as a step in a workflow you already have, which is the cheapest way to keep the answer honest over time:
+
+```yaml
+- uses: holistis/muraqib@v0.3.1
+  with:
+    dir: .          # where your playwright.config lives, if not the repo root
+```
+
+It exits non-zero when it finds a problem, so it fails the build rather than printing into a log nobody reads.
 
 ## The problem it solves
 

@@ -1,6 +1,6 @@
 {
   "name": "muraqib",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Nightly Playwright QA that tells you when it stops watching. Claude opens the fix PR, a watchdog catches the nights nothing reported at all.",
   "license": "MIT",
   "author": "Abdellah Ouadoudi",
@@ -57,17 +57,18 @@
     "test-automation"
   ],
   "files": [
-    "bin/muraqib.mjs",
-    "scripts/",
-    "tests/",
     ".github/workflows/",
+    "LESSONS.md",
+    "SECURITY.md",
+    "action.yml",
+    "bin/muraqib.mjs",
+    "lib/",
     "muraqib.config.ts",
     "playwright.config.ts",
+    "scripts/",
     "task-runner.ts",
     "tasks/",
-    "lib/",
-    "LESSONS.md",
-    "SECURITY.md"
+    "tests/"
   ],
   "peerDependencies": {
     "@playwright/test": ">=1.44.0"
