@@ -34,3 +34,15 @@ jobs:
       - run: npm run check:required-checks
       - run: npm run check:timeout-budget
       - run: npm run check:alerting
+
+  # Runs the published Action against this repo, using the copy in this branch
+  # rather than a released one. Without this the action.yml is only checked by
+  # reading it, and an action nobody runs is exactly the kind of thing that is
+  # broken on the day someone else first tries it.
+  action-works:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          dir: "."
