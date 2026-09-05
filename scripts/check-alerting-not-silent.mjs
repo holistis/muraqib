@@ -51,7 +51,47 @@ const NOTIFICATION_HOSTS = [
 ];
 
 /** curl flags that make an HTTP error status a non-zero exit. */
-const CURL_FAILS_LOUDLY = /(^|\s)(--fail-with-body|--fail\b|-[a-zA-Z]*f[a-zA-Z]*\s)/;
+/**
+ * Decides whether a curl call fails hard on an HTTP error.
+ *
+ * Two holes used to sit here, both found by testing this check with the
+ * defect it claims to catch (mutation run, 2026-09-03):
+ *
+ *   1. The flag was looked for across the WHOLE step, comments included.
+ *      Directly above the curl in muraqib-claude-fix.yml sits an
+ *      explanation of why --fail-with-body has to be there. Remove the flag
+ *      and leave that explanation, and the check stayed green: the word was
+ *      still on the page, in a comment. The more carefully you documented
+ *      why the flag matters, the more reliably you disabled the check.
+ *
+ *   2. The short-flag branch `-[a-zA-Z]*f[a-zA-Z]*` matched any word
+ *      containing an f, so `-config` satisfied it. It now has to be a real
+ *      short-option cluster of at most four letters, like -f, -sf or -sSf.
+ */
+const CURL_LONG_FLAG = /(^|\s)(--fail-with-body|--fail)(\s|$)/;
+const CURL_SHORT_CLUSTER = /(^|\s)-([a-zA-Z]{1,4})(?=\s|$)/g;
+
+export function curlFailsLoudly(body) {
+  const withoutComments = stripCommentLines(body);
+  if (CURL_LONG_FLAG.test(withoutComments)) return true;
+  CURL_SHORT_CLUSTER.lastIndex = 0;
+  let match;
+  while ((match = CURL_SHORT_CLUSTER.exec(withoutComments)) !== null) {
+    if (match[2].includes("f")) return true;
+  }
+  return false;
+}
+
+/**
+ * Drops shell comments. Inside a `run: |` block, anything after a # at the
+ * start of a line is a comment, and a comment sends no request.
+ */
+export function stripCommentLines(body) {
+  return body
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+}
 
 export function mentionsNotificationHost(line) {
   return NOTIFICATION_HOSTS.some(host => line.includes(host));
@@ -122,7 +162,8 @@ export function findSilentAlertingProblems(workflows) {
       for (const line of step.lines) {
         if (!/\bcurl\b/.test(line)) continue;
         // The flags may sit on continuation lines, so judge the whole step.
-        if (!CURL_FAILS_LOUDLY.test(body)) {
+        // Comment lines do not count, see curlFailsLoudly.
+        if (!curlFailsLoudly(body)) {
           problems.push({
             label,
             message:

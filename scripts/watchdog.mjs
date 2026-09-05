@@ -22,6 +22,7 @@
  *   MURAQIB_MAX_QUIET_HOURS / _MAX_CANCELS / _MAX_FAILURES  optional overrides
  */
 import { assessHeartbeat } from "./check-nightly-heartbeat.mjs";
+import { pathToFileURL } from "node:url";
 
 const RUNS_TO_INSPECT = 30;
 
@@ -37,7 +38,7 @@ function required(name) {
   return value;
 }
 
-function optionalNumber(name) {
+function optionalNumber(name, env = process.env) {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return undefined;
   const value = Number(raw);
@@ -90,13 +91,13 @@ async function fetchNightlyRuns() {
  * somebody through whichever channel is already configured, rather than
  * depending on the one that needs the most setup.
  */
-const CHANNELS = [
+export const CHANNELS = [
   {
     name: "email",
-    config: () => ({
-      key: process.env.RESEND_API_KEY,
-      to: process.env.MURAQIB_EMAIL_TO,
-      from: process.env.MURAQIB_EMAIL_FROM,
+    config: (env = process.env) => ({
+      key: env.RESEND_API_KEY,
+      to: env.MURAQIB_EMAIL_TO,
+      from: env.MURAQIB_EMAIL_FROM,
     }),
     configured: c => Boolean(c.key && c.to && c.from),
     missing: "RESEND_API_KEY, MURAQIB_EMAIL_TO and MURAQIB_EMAIL_FROM",
@@ -112,9 +113,9 @@ const CHANNELS = [
   },
   {
     name: "telegram",
-    config: () => ({
-      token: process.env.MURAQIB_TELEGRAM_BOT_TOKEN,
-      chatId: process.env.MURAQIB_TELEGRAM_CHAT_ID,
+    config: (env = process.env) => ({
+      token: env.MURAQIB_TELEGRAM_BOT_TOKEN,
+      chatId: env.MURAQIB_TELEGRAM_CHAT_ID,
     }),
     configured: c => Boolean(c.token && c.chatId),
     missing: "MURAQIB_TELEGRAM_BOT_TOKEN and MURAQIB_TELEGRAM_CHAT_ID",
@@ -141,14 +142,14 @@ ${body}`, disable_web_page_preview: true }),
  * here is that a channel which was configured and then did not deliver leaves
  * a line in the log, rather than looking the same as a channel nobody set up.
  */
-async function sendAlert(subject, body) {
-  const configured = CHANNELS.map(channel => ({ channel, config: channel.config() })).filter(
+export async function sendAlert(subject, body, { channels = CHANNELS, env = process.env, log = console } = {}) {
+  const configured = channels.map(channel => ({ channel, config: channel.config(env) })).filter(
     ({ channel, config }) => channel.configured(config)
   );
 
   if (configured.length === 0) {
-    console.error(
-      `NOTE: no notification channel is configured, so nothing was sent. Set either ${CHANNELS.map(c => c.missing).join(", or ")}. The job still fails below, so this stays visible in Actions either way.`
+    log.error(
+      `NOTE: no notification channel is configured, so nothing was sent. Set either ${channels.map(c => c.missing).join(", or ")}. The job still fails below, so this stays visible in Actions either way.`
     );
     return;
   }
@@ -157,18 +158,36 @@ async function sendAlert(subject, body) {
     try {
       const response = await channel.send(config, subject, body);
       if (!response.ok) {
-        console.error(`NOTE: ${channel.name} returned ${response.status}, that alert did not go out.`);
+        log.error(`NOTE: ${channel.name} returned ${response.status}, that alert did not go out.`);
         continue;
       }
-      console.log(`Alert sent via ${channel.name} to ${channel.describe(config)}.`);
+      log.log(`Alert sent via ${channel.name} to ${channel.describe(config)}.`);
     } catch (err) {
-      console.error(`NOTE: ${channel.name} threw while sending: ${err.message}`);
+      log.error(`NOTE: ${channel.name} threw while sending: ${err.message}`);
     }
   }
 }
 
-async function main() {
-  const repo = process.env.GITHUB_REPOSITORY || "this repo";
+/**
+ * The watchdog's decision lives in assessHeartbeat and that is tested. The
+ * wiring around it was not, and that was the gap: the safety net below was
+ * added on 2026-09-03 because its absence was a bug, and nothing checked
+ * that it was still there. A mutation run confirmed it, by disabling
+ * sendAlert entirely and watching every check in the repo stay green.
+ *
+ * So the three outer edges are injectable now. The defaults are the real
+ * ones, which means nothing changes in production.
+ */
+export async function main({
+  fetchRuns = fetchNightlyRuns,
+  alert = sendAlert,
+  env = process.env,
+  // The watchdog reasons about time, so the clock belongs in the signature
+  // rather than hiding inside the body. Otherwise the behaviour cannot be
+  // tested without faking the system clock.
+  now = () => Date.now(),
+} = {}) {
+  const repo = env.GITHUB_REPOSITORY || "this repo";
 
   // Found 2026-09-03: everything from here down used to run with no try/catch
   // of its own, so a thrown error (a network failure or a timeout on the fetch
@@ -180,13 +199,13 @@ async function main() {
   // layer out. A watchdog that can silently stop watching because of its own
   // bug is the same shape of bug as the one it watches for.
   try {
-    const { runs, note } = await fetchNightlyRuns();
+    const { runs, note } = await fetchRuns();
 
     const verdict = assessHeartbeat(runs, {
-      now: Date.now(),
-      maxQuietHours: optionalNumber("MURAQIB_MAX_QUIET_HOURS"),
-      maxConsecutiveInconclusive: optionalNumber("MURAQIB_MAX_CANCELS"),
-      maxConsecutiveFailures: optionalNumber("MURAQIB_MAX_FAILURES"),
+      now: now(),
+      maxQuietHours: optionalNumber("MURAQIB_MAX_QUIET_HOURS", env),
+      maxConsecutiveInconclusive: optionalNumber("MURAQIB_MAX_CANCELS", env),
+      maxConsecutiveFailures: optionalNumber("MURAQIB_MAX_FAILURES", env),
     });
 
     if (verdict.ok) {
@@ -208,7 +227,7 @@ async function main() {
     console.error(`WATCHDOG: ${verdict.code}`);
     console.error(body);
 
-    await sendAlert(`Muraqib is not watching ${repo}`, body);
+    await alert(`Muraqib is not watching ${repo}`, body);
     process.exitCode = 1;
   } catch (err) {
     const body = [
@@ -218,16 +237,24 @@ async function main() {
     ].join("\n");
     console.error(`WATCHDOG: crashed`);
     console.error(body);
-    await sendAlert(`Muraqib's watchdog crashed while checking ${repo}`, body);
+    await alert(`Muraqib's watchdog crashed while checking ${repo}`, body);
     process.exitCode = 1;
   }
 }
 
-main().catch(err => {
-  // Reachable only if sendAlert() itself throws synchronously in a way the
-  // catch above didn't already handle, or main() throws before entering the
-  // try block. Kept as the last-resort backstop, matching the file's original
-  // shape, see the comment at the top on why this uses exitCode not exit().
-  console.error(`FAILED: ${err.message}`);
-  process.exitCode = 1;
-});
+// Only run when this file was invoked directly. Without this gate,
+// importing the module in a test would start the real watchdog, network
+// request and live alert included.
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly || process.env.MURAQIB_WATCHDOG_FORCE_RUN === "1") {
+  main().catch(err => {
+    // Reachable only if sendAlert() itself throws synchronously in a way the
+    // catch above didn't already handle, or main() throws before entering the
+    // try block. Kept as the last-resort backstop, see the comment at the top
+    // on why this uses exitCode not exit().
+    console.error(`FAILED: ${err.message}`);
+    process.exitCode = 1;
+  });
+}
