@@ -143,6 +143,46 @@ The most recent one is the least flattering and the most useful. Of those 164 ru
 
 Both of the checks described further up exist because of that, and `npx muraqib doctor` was written so anyone already running this can find the same problem in their own repo in one command instead of two months.
 
+That same bug turned out not to be ours alone. The CI guide in Playwright's own docs
+recommended a job-level `timeout-minutes` and never mentioned `globalTimeout`, which
+defaults to no timeout at all. At the time of checking, GitHub code search reported
+roughly 163,000 `playwright.config.ts` files of which about 1,700 set `globalTimeout`,
+so around one percent had the safe shape.
+
+Reported as [microsoft/playwright#42533](https://github.com/microsoft/playwright/issues/42533)
+on 3 September 2026. Playwright maintainer Dmitry Gozman went further than the
+documentation note that was proposed and merged two changes on 4 September: the docs in
+[playwright#42563](https://github.com/microsoft/playwright/pull/42563), and the project
+scaffolding in [create-playwright#181](https://github.com/microsoft/create-playwright/pull/181).
+Every project created with `npm init playwright@latest` now gets `globalTimeout` in its
+config and no job-level timeout in its workflow. Write-up:
+[A CI timeout is a kill, not a failure](https://dev.to/holistis/a-ci-timeout-is-a-kill-not-a-failure-playwrights-defaults-changed-because-of-it-318j).
+
+### Can these checks actually fail
+
+A check that cannot go red is worse than no check: it costs the same to run, looks the
+same in the Actions tab, and buys confidence it has not earned. So that is tested rather
+than assumed.
+
+```bash
+npm run mutation-test
+```
+
+For each check it introduces the exact defect that check claims to catch, runs the check,
+and puts the file back. Three measurements per case, because a single red proves nothing
+if it was already red or if the harness broke something: green before, red during, green
+after. Anything else is reported as unknown, not as a pass.
+
+The first run found two checks that could never fail. One was defeated by its own
+explanatory comment: it looked for the `--fail` flag across the whole workflow step, and
+the comment above the `curl` explaining why that flag matters satisfied the search. The
+more carefully the reason was documented, the more reliably the check was disabled. The
+other was the watchdog, which had no tests at all, which is the worst place here to have
+none. Both are fixed. Current state: 10 alive, 0 dead.
+
+The harness itself was broken three times before the checks were, which is why it now
+measures three times instead of once.
+
 ## Compared to a hosted service
 
 Octomind offered a similar idea, nightly AI-assisted QA, as a hosted product from around $89 a month. They raised close to $5M and shut down in April 2026 after about three years. That is a fact about their business model and their runway, not proof that nobody wants this. Testing does not get less important as more code gets written by an agent instead of a person. If anything it is the other way round.
