@@ -16,6 +16,14 @@ A Playwright test failure message can, in principle, contain text influenced by 
 1. **The workflow files never splice that text as a raw GitHub Actions expression** (`${{ }}`) into a script block. Every value crosses that boundary through an `env:` variable instead, read back with `process.env` (or via `jq -n` for the one step that builds JSON in bash). Splicing untrusted text directly into a script block is a known class of vulnerability (CWE-94, GitHub Actions script injection). It lets a backtick or `${...}` in the text break out of the string and run arbitrary code with the workflow's `issues:write`/`pull-requests:write` token. This repo had that exact bug in its first commit; it's fixed now, and the fix is the reason every step that touches failure text passes it through `env:`.
 2. **The failure text is explicitly labeled as untrusted data, not instructions**, in the prompt itself. Claude is told to treat it as error output only, never as a command, even if it contains something that reads like one.
 
+## Known risk: failed-test text lands in a public issue body
+
+An external security review (2026-09-08) pointed out a gap this file didn't cover: the untrusted-input handling above is about *injection* (the text can't break out and run as code), not about *confidentiality* (the text itself still gets posted). `muraqib-claude-fix.yml` copies up to 5 failed tests' error messages, each truncated to 800 characters, straight into the GitHub issue body it opens (`bodyLines`, built from `results.json`). On a public repository, that issue is public too.
+
+A Playwright error message can echo whatever the failing page or request actually contained: a URL with a query string, a form value the test typed in, a selector, part of a response body. None of that is expected to be a secret (secrets shouldn't be in test fixtures or page content in the first place), but it can still be more specific than you'd want sitting in a public issue: an internal staging URL, a test account's email, a stray identifier. The `UNTRUSTED DATA` label a few lines below it protects the prompt from treating that text as instructions; it does nothing to keep the text itself private, and nothing today truncates, redacts, or reviews it before the issue is created.
+
+If you run Muraqib against a **public** repository: assume every nightly failure's error text becomes public within minutes, and keep test fixtures, seed data, and any URLs your tests hit free of anything you wouldn't otherwise post. There is no redaction or truncation-below-800-chars option today beyond the triple-backtick neutralization already in the code; if a specific flow's failures could leak something sensitive, the current options are to fix the fixture/data itself, or exclude that spec from the nightly run.
+
 ## Known risk: auto-merge
 
 `claudeIntegration.autoMerge` defaults to `false`. If you turn it on:
