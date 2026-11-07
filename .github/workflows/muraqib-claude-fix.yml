@@ -45,7 +45,7 @@ jobs:
 
       - name: Skip if an auto-fix issue is already open
         id: existing_issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           # Found 2026-09-03: a test that fails the same way night after night
           # opened a brand new issue and dispatched a brand new Claude session
@@ -81,7 +81,7 @@ jobs:
       - name: Build issue body
         id: issue_body
         if: steps.existing_issue.outputs.skip != 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           MURAQIB_RUN_ID: ${{ inputs.run_id }}
           MURAQIB_SUMMARY: ${{ inputs.summary }}
@@ -188,7 +188,7 @@ jobs:
       - name: Create Issue
         id: create_issue
         if: steps.existing_issue.outputs.skip != 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           MURAQIB_ISSUE_TITLE: ${{ steps.issue_body.outputs.title }}
           MURAQIB_ISSUE_BODY: ${{ steps.issue_body.outputs.body }}

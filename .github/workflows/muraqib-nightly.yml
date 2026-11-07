@@ -103,7 +103,7 @@ jobs:
 
       - name: Trigger Claude fix on failure
         if: steps.tests.outputs.tests_failed == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
