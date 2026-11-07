@@ -41,7 +41,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Skip if an auto-fix issue is already open
         id: existing_issue
