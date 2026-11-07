@@ -118,6 +118,21 @@ test("reads the name a workflow declares, quoted or not", () => {
   assert.equal(declaredWorkflowName(["# name: commented out", "on: push", ""].join("\n")), null);
 });
 
+test("the declared name survives Windows line endings, extra spaces, and a name key with no value", () => {
+  assert.equal(declaredWorkflowName("name:   Muraqib Nightly   \r\non: push\r\n"), "Muraqib Nightly");
+  assert.equal(declaredWorkflowName("name:\non: push\n"), null);
+  assert.equal(declaredWorkflowName("jobs:\n  name: not top level\n"), null);
+  assert.equal(declaredWorkflowName(""), null);
+});
+
+test("a line of very many spaces is read in linear time (no regex backtracking)", () => {
+  const started = Date.now();
+  // The old regex took 0.7 s for 20,000 spaces here and 10.9 s for 80,000: quadratic. 300,000 would have run for minutes.
+  assert.equal(declaredWorkflowName("name:a" + " ".repeat(300000) + "b\n"), "a" + " ".repeat(300000) + "b");
+  assert.equal(declaredWorkflowName("name:" + " ".repeat(300000)), null);
+  assert.ok(Date.now() - started < 500, "took " + (Date.now() - started) + " ms");
+});
+
 test("an already-installed workflow is found under a renamed file", () => {
   // A host project may well rename auto-merge-guard.yml to something tidier.
   // Matching on filename alone would then install a second copy of the same
