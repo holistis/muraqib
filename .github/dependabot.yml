@@ -10,6 +10,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # ts-node 10.9.2 (the loader behind npm run task) cannot start on TypeScript 7:
+      # that release has no JavaScript compiler API and ts.sys is undefined.
+      # Stay on 6.x until ts-node supports 7 or the task runner moves to another loader.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
