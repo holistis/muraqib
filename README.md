@@ -16,6 +16,11 @@ Want a single check right now instead of nightly monitoring, no setup at all? Se
 [site-check-mcp](https://github.com/holistis/site-check-mcp) — pay $0.02 per call
 (x402, USDC on Base), get a real-browser report back in seconds.
 
+## Two things that turned out to be true
+
+1. A bug this project found in its own CI was not ours alone. Playwright's own docs recommended a setup that silently swallows a slow-suite failure. We reported it, a Playwright maintainer confirmed it and merged two fixes, and every project scaffolded with `npm init playwright@latest` now gets the safe default. [microsoft/playwright#42533](https://github.com/microsoft/playwright/issues/42533). Full story further down.
+2. A hosted competitor offering the same idea, nightly AI-assisted QA, raised close to $5M and shut down in April 2026 after about three years. That's a fact about one company's runway, not proof nobody wants this, but it's a real data point about the hosted-SaaS version of this problem. Details below under "Compared to a hosted service."
+
 ## Start here
 
 Already have Muraqib, or any nightly Playwright setup, in a repo:
