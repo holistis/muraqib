@@ -43,7 +43,7 @@ Until it is, merging a normal PR here needs `gh pr merge --admin` (safe: `enforc
 
 ## If you find something
 
-Open an issue, or if it's sensitive, email the address in the repo owner's GitHub profile. This is a solo-maintained tool, response time varies, but security reports get priority over everything else in the queue.
+Report it privately with GitHub private vulnerability reporting: https://github.com/holistis/muraqib/security/advisories/new. If something is not sensitive, an ordinary issue is fine. This is a solo-maintained tool: expect an acknowledgement within 7 days and a first assessment within 30 days. Security reports get priority over everything else in the queue.
 
 ## Changelog of security-relevant fixes
 

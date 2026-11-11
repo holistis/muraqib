@@ -66,16 +66,23 @@ export function findInstalledWorkflow(workflowsDir, workflowName, readDir = read
   for (const entry of readDir(workflowsDir)) {
     if (!entry.endsWith(".yml") && !entry.endsWith(".yaml")) continue;
     const source = readFile(join(workflowsDir, entry), "utf8");
-    const declared = /^name:\s*(.+?)\s*$/m.exec(source);
-    if (declared && declared[1].replace(/^["']|["']$/g, "") === workflowName) return entry;
+    if (declaredWorkflowName(source) === workflowName) return entry;
   }
   return null;
 }
 
-/** The `name:` each shipped workflow declares, used for the check above. */
+/**
+ * The `name:` each shipped workflow declares, used for the check above.
+ * Read line by line: an earlier regex with a lazy group followed by optional whitespace backtracked polynomially on a line of
+ * many spaces (CodeQL js/polynomial-redos), and its whitespace could also run across a line break.
+ */
 export function declaredWorkflowName(source) {
-  const match = /^name:\s*(.+?)\s*$/m.exec(source);
-  return match ? match[1].replace(/^["']|["']$/g, "") : null;
+  for (const line of String(source).split("\n")) {
+    if (!line.startsWith("name:")) continue;
+    const value = line.slice("name:".length).trim();
+    if (value) return value.replace(/^["']|["']$/g, "");
+  }
+  return null;
 }
 
 /** Files GitHub insists live at the repo root, whatever else you do. */
