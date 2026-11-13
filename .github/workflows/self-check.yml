@@ -33,6 +33,7 @@ jobs:
       - run: npm run check:workflows
       - run: npm run check:required-checks
       - run: npm run check:timeout-budget
+      - run: npm run check:runner-pin
       - run: npm run check:alerting
 
   # Runs the published Action against this repo, using the copy in this branch

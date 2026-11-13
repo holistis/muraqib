@@ -91,6 +91,8 @@ There is a third check for the same problem one layer out. A notification step t
 
 That check exists because of a second incident on the same day, found while testing the first fix. The host project had never had its `RESEND_API_KEY` set, and all three of its notification paths responded to that by doing nothing and going green. Twelve consecutive Mondays of a weekly digest that sent no digest. See [LESSONS.md](LESSONS.md).
 
+Another way for a night to go silent is the machine changing under the job. `ubuntu-latest` is a label GitHub moves to each new Ubuntu LTS (its notice is [runner-images#14748](https://github.com/actions/runner-images/issues/14748)), and a Playwright version that does not support the new release yet cannot install a browser on it. The job then ends before its first test, and no alert that hangs off a test run fires. The watchdog counts a failed run as a run that reported, so it only says something once the failures reach seven in a row. `npx muraqib doctor` and `npm run check:runner-pin` flag a nightly that installs browsers on `ubuntu-latest`, and the template is pinned to `ubuntu-24.04`. The measurements are in [LESSONS.md](LESSONS.md).
+
 The watchdog installs nothing. No dependencies, no npm step, just the Actions API and the fetch built into Node 20. Whatever watches the watchman needs fewer moving parts than the watchman.
 
 ## Setup
@@ -136,7 +138,7 @@ The nightly, the watchdog and the fix workflow are disabled here, and that is de
 
 This repository has no app to watch. Its `muraqib.config.ts` points at a placeholder, so its nightly failed on every single run, 81 out of 81, and its watchdog would now report that streak as furniture every morning. Which is correct, and it is exactly the thing this project tells you not to live with, so leaving it running to look busy would be dishonest.
 
-What runs here instead is `self-check.yml`: the tests for this template's own code, and the four checks that keep the failure modes above from coming back. `npx muraqib init` enables the monitoring workflows in your repository, where there is something to monitor.
+What runs here instead is `self-check.yml`: the tests for this template's own code, and the five checks that keep the failure modes above from coming back. `npx muraqib init` enables the monitoring workflows in your repository, where there is something to monitor.
 
 Related: the nightly no longer triggers on a push to `main`. The project this template came from removed that trigger months ago, because every merge kicked off a full 25 to 45 minute Playwright run against production for no information the nightly schedule would not give a few hours later. That lesson had never made it back into the template.
 
@@ -146,7 +148,7 @@ And if `baseUrl` is still the shipped placeholder, the run now fails immediately
 
 This section used to promise a public defect history and then not have one. Here is the real thing.
 
-Running since 2 June 2026 against a live production app, 164 nightly runs so far. Four incidents are written up in full in [LESSONS.md](LESSONS.md), including what was wrong, how it was actually verified as fixed rather than assumed, and what regression check now stops it coming back. Every one of them is a bug in Muraqib itself, found by using it. Security-relevant fixes have their own changelog in [SECURITY.md](SECURITY.md).
+Running since 2 June 2026 against a live production app, 164 nightly runs so far. Seven incidents are written up in full in [LESSONS.md](LESSONS.md), including what was wrong, how it was actually verified as fixed rather than assumed, and what regression check now stops it coming back. Every one of them is a bug in Muraqib itself, found by using it. Security-relevant fixes have their own changelog in [SECURITY.md](SECURITY.md).
 
 The most recent one is the least flattering and the most useful. Of those 164 runs, 7 succeeded, 76 failed, and 81 were cancelled, the last 60-plus consecutively. The job's `timeout-minutes` was killing the suite at 20 minutes, and because a cancelled run fires no alert, nothing said a word for over two months. The guard had gone quiet and the quiet looked exactly like everything being fine.
 
@@ -187,7 +189,7 @@ explanatory comment: it looked for the `--fail` flag across the whole workflow s
 the comment above the `curl` explaining why that flag matters satisfied the search. The
 more carefully the reason was documented, the more reliably the check was disabled. The
 other was the watchdog, which had no tests at all, which is the worst place here to have
-none. Both are fixed. Current state: 10 alive, 0 dead.
+none. Both are fixed. Current state: 19 alive, 0 dead.
 
 The harness itself was broken three times before the checks were, which is why it now
 measures three times instead of once.

@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname, relative, resolve, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findTimeoutBudgetProblems } from "../scripts/check-timeout-budget.mjs";
+import { inspectRunners } from "../scripts/check-runner-pin.mjs";
 import { findSilentAlertingProblems, readWorkflows } from "../scripts/check-alerting-not-silent.mjs";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -350,6 +351,21 @@ function doctor(args) {
     }
   }
 
+  if (workflow) {
+    const runner = inspectRunners(readFileSync(workflow.path, "utf8"), { workflowPath: workflow.relative });
+    if (runner.problems.length === 0 && runner.installingJobs > 0) {
+      passed.push(
+        "Every browser install this check could see runs on a pinned runner, so GitHub moving ubuntu-latest cannot end the nightly at the install step."
+      );
+    }
+    for (const problem of runner.problems) {
+      problems.push({
+        title: "The machine under the nightly can change without you choosing it",
+        detail: `${problem.label}: ${problem.message}`,
+      });
+    }
+  }
+
   // Every workflow in the repo, not only Muraqib's own. A rollback alert or a
   // deploy notification that quietly skips itself leaves the same hole, and
   // whoever runs this would rather hear about all of them at once.
@@ -386,7 +402,7 @@ function doctor(args) {
 
   if (problems.length > 0) {
     console.log("");
-    console.log(`${problems.length} problem(s). Each one means a night where your app is not checked and you are not told.`);
+    console.log(`${problems.length} problem(s). Each one is a way for a night to pass with your app unchecked and nobody told.`);
     process.exitCode = 1;
   }
 }

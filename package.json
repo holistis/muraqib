@@ -16,8 +16,9 @@
     "check:required-checks": "node scripts/check-required-check-not-skippable.mjs",
     "test:scripts": "node --test scripts/*.test.mjs bin/*.test.mjs",
     "check:timeout-budget": "node scripts/check-timeout-budget.mjs",
+    "check:runner-pin": "node scripts/check-runner-pin.mjs",
     "watchdog": "node scripts/watchdog.mjs",
-    "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget && npm run check:alerting",
+    "check:all": "npm run test:scripts && npm run check:workflows && npm run check:required-checks && npm run check:timeout-budget && npm run check:runner-pin && npm run check:alerting",
     "check:alerting": "node scripts/check-alerting-not-silent.mjs",
     "mutation-test": "node scripts/mutation-test.mjs"
   },
