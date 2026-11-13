@@ -10,6 +10,11 @@
 # someone disables the workflow and forgets. In all of them the dashboard is
 # calm and the inbox is empty while nothing is being watched.
 #
+# A failed night counts as having reported only if it left its test results
+# behind (the test-results-json artifact). A job that dies at the install or on
+# an expired secret fails without one test having run, and none of the alerts
+# above can fire for it, so a red conclusion alone proves nothing.
+#
 # This workflow deliberately installs nothing. It has no dependencies, reads
 # the nightly's run history straight from the Actions API, and uses the fetch
 # built into Node 20. The thing that watches the watchman should have fewer
@@ -62,4 +67,6 @@ jobs:
           MURAQIB_EMAIL_FROM: ${{ secrets.MURAQIB_EMAIL_FROM }}
           MURAQIB_TELEGRAM_BOT_TOKEN: ${{ secrets.MURAQIB_TELEGRAM_BOT_TOKEN }}
           MURAQIB_TELEGRAM_CHAT_ID: ${{ secrets.MURAQIB_TELEGRAM_CHAT_ID }}
+          # Only when the nightly uploads its test results under another name than
+          # test-results-json, add: MURAQIB_RESULTS_ARTIFACT: your-artifact-name
         run: node scripts/watchdog.mjs

@@ -179,3 +179,167 @@ test("a successful send is reported", async () => {
 
   assert.ok(found(lines, "log", /Alert sent via email/));
 });
+
+/**
+ * A red night only counts as reported when its tests ran. The heartbeat sees
+ * conclusions and not steps, so a night that died at the install counted as a
+ * night that reported until the failures reached seven in a row. These tests
+ * pin the second look that main() takes at the newest failed run.
+ */
+const NEVER_RAN = { artifacts: ["playwright-report"], failedStep: "Install Playwright Chromium" };
+const RAN = { artifacts: ["playwright-report", "test-results-json"], failedStep: "Fail job if tests failed" };
+
+test("a night that died before its tests alerts although the heartbeat is healthy", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = [run("failure", 6), run("success", 30)];
+
+  const exitCode = await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => NEVER_RAN,
+    alert,
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /ended before its tests/);
+  assert.match(sent[0].body, /Install Playwright Chromium/);
+  assert.match(sent[0].body, /https:\/\/x\/6/);
+  assert.equal(exitCode, 1);
+});
+
+test("a night whose tests ran and failed stays quiet, that alert path already worked", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = [run("failure", 6), run("success", 30)];
+
+  const exitCode = await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => RAN,
+    alert,
+  });
+
+  assert.equal(sent.length, 0);
+  assert.notEqual(exitCode, 1);
+});
+
+test("a green night never asks for results", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = [run("success", 6), run("failure", 30)];
+  const fetchResults = async () => {
+    throw new Error("a green night must not trigger a results lookup");
+  };
+
+  const exitCode = await runMain({ fetchRuns: async () => ({ runs, note: null }), fetchResults, alert });
+
+  assert.equal(sent.length, 0);
+  assert.notEqual(exitCode, 1);
+});
+
+test("a failed night whose artifacts cannot be read counts as unhealthy", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = [run("failure", 6), run("success", 30)];
+
+  const exitCode = await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => ({ artifacts: null, failedStep: null }),
+    alert,
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /could not tell whether the newest nightly ran its tests/);
+  assert.match(sent[0].body, /could not read its artifacts/);
+  assert.equal(exitCode, 1);
+});
+
+test("the results artifact can be named in the environment", async () => {
+  const runs = [run("failure", 6), run("success", 30)];
+  const env = { ...ENV, MURAQIB_RESULTS_ARTIFACT: "my-results" };
+
+  const renamed = alertCollector();
+  await runMain({
+    env,
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => ({ artifacts: ["my-results"], failedStep: null }),
+    alert: renamed.alert,
+  });
+  assert.equal(renamed.sent.length, 0, "the configured name is the one that counts");
+
+  const defaultName = alertCollector();
+  await runMain({
+    env,
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => RAN,
+    alert: defaultName.alert,
+  });
+  assert.equal(defaultName.sent.length, 1, "the default name must not count once another is configured");
+});
+
+test("after a long red streak, a newest night that never ran its tests names the real cause", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = Array.from({ length: 8 }, (_, i) => run("failure", 6 + 24 * i));
+
+  const exitCode = await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => NEVER_RAN,
+    alert,
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /ended before its tests/);
+  assert.match(sent[0].body, /Install Playwright Chromium/);
+  assert.match(sent[0].body, /latest of 8 failed runs in a row/, "the streak length must not be lost");
+  assert.equal(exitCode, 1);
+});
+
+test("a long red streak whose tests did run is still reported as the streak", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = Array.from({ length: 8 }, (_, i) => run("failure", 6 + 24 * i));
+
+  await runMain({ fetchRuns: async () => ({ runs, note: null }), fetchResults: async () => RAN, alert });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /not watching/);
+  assert.match(sent[0].body, /failed 8 runs in a row/);
+});
+
+test("a failed lookup does not replace a long red streak with a weaker message", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = Array.from({ length: 8 }, (_, i) => run("failure", 6 + 24 * i));
+
+  await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => ({ artifacts: null, failedStep: null }),
+    alert,
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].body, /failed 8 runs in a row/);
+});
+
+test("a heartbeat problem other than a red streak is never replaced by the results lookup", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = Array.from({ length: 30 }, (_, i) => run("cancelled", 24 * (i + 1)));
+  const fetchResults = async () => {
+    throw new Error("the lookup is only for a finished failed run");
+  };
+
+  await runMain({ fetchRuns: async () => ({ runs, note: null }), fetchResults, alert });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /not watching/);
+});
+
+test("a failure while reading results does not skip the alert", async () => {
+  const { sent, alert } = alertCollector();
+  const runs = [run("failure", 6), run("success", 30)];
+
+  const exitCode = await runMain({
+    fetchRuns: async () => ({ runs, note: null }),
+    fetchResults: async () => {
+      throw new Error("getaddrinfo ENOTFOUND api.github.com");
+    },
+    alert,
+  });
+
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].subject, /crashed/);
+  assert.equal(exitCode, 1);
+});

@@ -85,13 +85,13 @@ This is not hypothetical. It happened here, to this project, for over two months
 Two things now close it:
 
 - `playwright.config.ts` sets `globalTimeout` below the job's `timeout-minutes`, so Playwright stops itself first and still writes a report. A slow suite fails loudly instead of vanishing. `npm run check:timeout-budget` fails the build if those two numbers ever drift back into the wrong order.
-- `muraqib-watchdog.yml` runs daily and asks one question: has the nightly produced a pass or a fail recently. It shouts if the recent runs were all cancelled, if nothing has reported inside the window, or if the workflow has no runs at all. It also flags a check that has been red for a week straight, because at that point it has stopped being an alert and become furniture.
+- `muraqib-watchdog.yml` runs daily and asks one question: has the nightly produced a pass or a fail recently. It shouts if the recent runs were all cancelled, if nothing has reported inside the window, or if the workflow has no runs at all. It also flags a check that has been red for a week straight, because at that point it has stopped being an alert and become furniture. When the newest night failed, it also checks that the night left its test results behind (the `test-results-json` artifact), because a job that dies before its tests ends as a plain failure that no test-failure alert ever saw. A nightly that uploads its results under another name sets `MURAQIB_RESULTS_ARTIFACT` to that name. An existing install picks this up by replacing both `scripts/watchdog.mjs` and `scripts/check-nightly-heartbeat.mjs`, which have to match.
 
 There is a third check for the same problem one layer out. A notification step that decides it cannot send, and returns success anyway, does not report either. `npx muraqib doctor` scans every workflow in the repo for steps that talk to a delivery service and flags the ones that can skip themselves quietly: an `if:` on a secret being non-empty, a shell `if [ -n "$KEY" ]` wrapper, a `github-script` sender that never calls `core.setFailed`, or a `curl` without `--fail` so an HTTP 401 still exits 0.
 
 That check exists because of a second incident on the same day, found while testing the first fix. The host project had never had its `RESEND_API_KEY` set, and all three of its notification paths responded to that by doing nothing and going green. Twelve consecutive Mondays of a weekly digest that sent no digest. See [LESSONS.md](LESSONS.md).
 
-Another way for a night to go silent is the machine changing under the job. `ubuntu-latest` is a label GitHub moves to each new Ubuntu LTS (its notice is [runner-images#14748](https://github.com/actions/runner-images/issues/14748)), and a Playwright version that does not support the new release yet cannot install a browser on it. The job then ends before its first test, and no alert that hangs off a test run fires. The watchdog counts a failed run as a run that reported, so it only says something once the failures reach seven in a row. `npx muraqib doctor` and `npm run check:runner-pin` flag a nightly that installs browsers on `ubuntu-latest`, and the template is pinned to `ubuntu-24.04`. The measurements are in [LESSONS.md](LESSONS.md).
+Another way for a night to go silent is the machine changing under the job. `ubuntu-latest` is a label GitHub moves to each new Ubuntu LTS (its notice is [runner-images#14748](https://github.com/actions/runner-images/issues/14748)), and a Playwright version that does not support the new release yet cannot install a browser on it. The job then ends before its first test, and no alert that hangs off a test run fires. The watchdog used to count such a night as one that reported, because it saw a failure and not the steps. It now checks that the newest failed night left its test results behind, and says the next morning when it did not. `npx muraqib doctor` and `npm run check:runner-pin` flag a nightly that installs browsers on `ubuntu-latest`, and the template is pinned to `ubuntu-24.04`. The measurements are in [LESSONS.md](LESSONS.md).
 
 The watchdog installs nothing. No dependencies, no npm step, just the Actions API and the fetch built into Node 20. Whatever watches the watchman needs fewer moving parts than the watchman.
 
@@ -136,7 +136,7 @@ Turning it on requires one manual step: add "Muraqib Auto-Merge Guard / guard" a
 
 The nightly, the watchdog and the fix workflow are disabled here, and that is deliberate rather than an oversight.
 
-This repository has no app to watch. Its `muraqib.config.ts` points at a placeholder, so its nightly failed on every single run, 81 out of 81, and its watchdog would now report that streak as furniture every morning. Which is correct, and it is exactly the thing this project tells you not to live with, so leaving it running to look busy would be dishonest.
+This repository has no app to watch. Its `muraqib.config.ts` points at a placeholder, so its nightly failed on every single run, 81 out of 81. Its nightly has not run since 3 September, so its watchdog would now report it as stale. Which is correct, and it is exactly the thing this project tells you not to live with, so leaving it running to look busy would be dishonest.
 
 What runs here instead is `self-check.yml`: the tests for this template's own code, and the five checks that keep the failure modes above from coming back. `npx muraqib init` enables the monitoring workflows in your repository, where there is something to monitor.
 
@@ -189,7 +189,7 @@ explanatory comment: it looked for the `--fail` flag across the whole workflow s
 the comment above the `curl` explaining why that flag matters satisfied the search. The
 more carefully the reason was documented, the more reliably the check was disabled. The
 other was the watchdog, which had no tests at all, which is the worst place here to have
-none. Both are fixed. Current state: 19 alive, 0 dead.
+none. Both are fixed. Current state: 28 alive, 0 dead.
 
 The harness itself was broken three times before the checks were, which is why it now
 measures three times instead of once.
