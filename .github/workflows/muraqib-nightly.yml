@@ -36,8 +36,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The runner is a concrete image, not ubuntu-latest. GitHub moves that label
+  # to each new Ubuntu LTS, and a Playwright version that does not support the
+  # new release yet fails at the browser install, so the nightly would end before
+  # its first test and none of the alerts below could fire. Move the pin together
+  # with a Playwright upgrade. scripts/check-runner-pin.mjs fails the build if
+  # the label comes back.
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # This is a hard kill, not a failure. If the runner stops the job here,
     # Playwright writes no report, GitHub records the run as "cancelled", and
     # every step below that keys off `tests_failed` is skipped: no fix PR, no
