@@ -20,8 +20,10 @@
  *   MURAQIB_TELEGRAM_BOT_TOKEN  optional, the other way
  *   MURAQIB_TELEGRAM_CHAT_ID    optional, required for telegram
  *   MURAQIB_MAX_QUIET_HOURS / _MAX_CANCELS / _MAX_FAILURES  optional overrides
+ *   MURAQIB_RESULTS_ARTIFACT  optional, the artifact the nightly uploads when
+ *                        its tests leave results, default "test-results-json"
  */
-import { assessHeartbeat } from "./check-nightly-heartbeat.mjs";
+import { RESULTS_ARTIFACT, assessHeartbeat, assessTestsRan, newestConclusiveRun } from "./check-nightly-heartbeat.mjs";
 import { pathToFileURL } from "node:url";
 
 const RUNS_TO_INSPECT = 30;
@@ -74,6 +76,49 @@ async function fetchNightlyRuns() {
 
   const body = await response.json();
   return { runs: Array.isArray(body.workflow_runs) ? body.workflow_runs : null };
+}
+
+/**
+ * What the Actions API says about one run: whether it left the results
+ * artifact (expired ones are gone and do not count) and the first step that
+ * failed. Only the results artifact is asked for, by name, so a run with many
+ * artifacts cannot push it off the first page. A call that does not come back
+ * OK leaves what it could not read as null, never as a guess.
+ */
+export async function fetchRunResults(run) {
+  const repo = required("GITHUB_REPOSITORY");
+  const token = required("GITHUB_TOKEN");
+  const api = process.env.GITHUB_API_URL || "https://api.github.com";
+  const resultsArtifact = process.env.MURAQIB_RESULTS_ARTIFACT || RESULTS_ARTIFACT;
+  const headers = {
+    authorization: `Bearer ${token}`,
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+  };
+  const results = { artifacts: null, failedStep: null };
+
+  const artifactsUrl = `${api}/repos/${repo}/actions/runs/${run.id}/artifacts?name=${encodeURIComponent(resultsArtifact)}&per_page=100`;
+  const artifactsResponse = await fetch(artifactsUrl, { headers });
+  if (artifactsResponse.ok) {
+    const body = await artifactsResponse.json();
+    if (Array.isArray(body.artifacts)) {
+      results.artifacts = body.artifacts.filter(artifact => !artifact.expired).map(artifact => artifact.name);
+    }
+  }
+
+  const jobsResponse = await fetch(`${api}/repos/${repo}/actions/runs/${run.id}/jobs?per_page=100`, { headers });
+  if (jobsResponse.ok) {
+    const body = await jobsResponse.json();
+    for (const job of Array.isArray(body.jobs) ? body.jobs : []) {
+      const failed = (job.steps ?? []).find(step => step.conclusion === "failure");
+      if (failed) {
+        results.failedStep = failed.name;
+        break;
+      }
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -180,6 +225,7 @@ export async function sendAlert(subject, body, { channels = CHANNELS, env = proc
  */
 export async function main({
   fetchRuns = fetchNightlyRuns,
+  fetchResults = fetchRunResults,
   alert = sendAlert,
   env = process.env,
   // The watchdog reasons about time, so the clock belongs in the signature
@@ -208,26 +254,46 @@ export async function main({
       maxConsecutiveFailures: optionalNumber("MURAQIB_MAX_FAILURES", env),
     });
 
-    if (verdict.ok) {
-      console.log(`OK: ${verdict.message}`);
+    // A red night counts as reported only if its tests ran. The heartbeat above
+    // cannot tell, because it sees conclusions and not steps, so a night that
+    // died at the install gets a second look here. After a long red streak
+    // ("furniture") the same look names the real cause, which says more than
+    // the streak does. It does not replace any other finding, and a failed
+    // lookup does not replace the streak.
+    let finding = verdict;
+    if (verdict.ok || verdict.code === "furniture") {
+      const latest = newestConclusiveRun(runs);
+      const results = latest?.conclusion === "failure" ? await fetchResults(latest) : null;
+      const ran = assessTestsRan(latest, results, { resultsArtifact: env.MURAQIB_RESULTS_ARTIFACT || undefined });
+      if (!ran.ok && (verdict.ok || ran.code === "tests-never-ran")) finding = ran;
+    }
+
+    if (finding.ok) {
+      console.log(`OK: ${finding.message}`);
       return;
     }
 
     const lines = [
       `Muraqib's nightly check on ${repo} is not reaching you.`,
       "",
-      verdict.message,
+      finding.message,
+      finding !== verdict && verdict.streak ? `That night is also the latest of ${verdict.streak} failed runs in a row.` : "",
       note ? `\n${note}` : "",
-      verdict.lastRunUrl ? `\nMost recent run: ${verdict.lastRunUrl}` : "",
+      finding.lastRunUrl ? `\nMost recent run: ${finding.lastRunUrl}` : "",
       "",
       "This email exists because the nightly's own alerts cannot fire in this state. Nothing is claiming your app is broken. The point is that nothing would be able to tell you if it were.",
     ].filter(Boolean);
 
     const body = lines.join("\n");
-    console.error(`WATCHDOG: ${verdict.code}`);
+    console.error(`WATCHDOG: ${finding.code}`);
     console.error(body);
 
-    await alert(`Muraqib is not watching ${repo}`, body);
+    const subjects = {
+      "tests-never-ran": `Muraqib's nightly ended before its tests on ${repo}`,
+      "results-unreadable": `Muraqib could not tell whether the newest nightly ran its tests on ${repo}`,
+    };
+    const subject = subjects[finding.code] ?? `Muraqib is not watching ${repo}`;
+    await alert(subject, body);
     process.exitCode = 1;
   } catch (err) {
     const body = [

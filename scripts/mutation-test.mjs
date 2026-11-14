@@ -72,7 +72,7 @@ const isClean = file => {
 const swap = (needle, replacement) => text => (text.includes(needle) ? text.replace(needle, replacement) : null);
 
 const CRASH_ALERT = "    await alert(`Muraqib's watchdog crashed while checking ${repo}`, body);";
-const UNHEALTHY_ALERT = "    await alert(`Muraqib is not watching ${repo}`, body);";
+const UNHEALTHY_ALERT = "    await alert(subject, body);";
 const SEND_ALERT_BODY = "  const configured = channels.map(channel => ({ channel, config: channel.config(env) })).filter(";
 
 const CASES = [
@@ -229,6 +229,78 @@ const CASES = [
     command: "npm run --silent test:scripts",
     file: "scripts/watchdog.mjs",
     mutate: swap(SEND_ALERT_BODY, `  return; // mutated: sends nothing\n${SEND_ALERT_BODY}`),
+  },
+  {
+    name: "tests ran: a night with no results passes",
+    claim: "a failed night that left no test results counted as a night that reported",
+    command: "npm run --silent test:scripts",
+    file: "scripts/check-nightly-heartbeat.mjs",
+    mutate: swap(
+      '  const step = results.failedStep ? ` The first step that failed was "${results.failedStep}".` : "";',
+      '  return { ok: true, code: "tests-ran", message: "mutated" };\n  const step = results.failedStep ? ` The first step that failed was "${results.failedStep}".` : "";'
+    ),
+  },
+  {
+    name: "tests ran: unreadable artifacts pass",
+    claim: "a failed night whose artifacts cannot be read must not be taken for a healthy one",
+    command: "npm run --silent test:scripts",
+    file: "scripts/check-nightly-heartbeat.mjs",
+    mutate: swap("  if (!results || !Array.isArray(results.artifacts)) {", "  if (false) {"),
+  },
+  {
+    name: "tests ran: artifact matched loosely",
+    claim: "a name that merely contains the results artifact name must not count as the artifact",
+    command: "npm run --silent test:scripts",
+    file: "scripts/check-nightly-heartbeat.mjs",
+    mutate: swap(
+      "results.artifacts.includes(resultsArtifact)",
+      "results.artifacts.some(name => name.includes(resultsArtifact))"
+    ),
+  },
+  {
+    name: "watchdog: results lookup not wired",
+    claim: "the second look at the newest failed night, which the heartbeat cannot make",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap('      if (!ran.ok && (verdict.ok || ran.code === "tests-never-ran")) finding = ran;', "      // mutated: results lookup ignored"),
+  },
+  {
+    name: "watchdog: streak replaced by a weaker message",
+    claim: "a failed lookup must not replace the red-streak alert with a vaguer one",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap('(verdict.ok || ran.code === "tests-never-ran")', "(true)"),
+  },
+  {
+    name: "results lookup: expired artifacts count",
+    claim: "an expired artifact is gone and must not count as the night's results",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap(".filter(artifact => !artifact.expired).map(artifact => artifact.name)", ".map(artifact => artifact.name)"),
+  },
+  {
+    name: "results lookup: a failed answer is read anyway",
+    claim: "an artifacts answer that is not OK must stay unread, never be taken at its word",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap("if (artifactsResponse.ok) {", "if (true) {"),
+  },
+  {
+    name: "results lookup: only the first job is read",
+    claim: "the first failed step has to be found in any job, not only the first one listed",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap(
+      "for (const job of Array.isArray(body.jobs) ? body.jobs : []) {",
+      "for (const job of Array.isArray(body.jobs) ? body.jobs.slice(0, 1) : []) {"
+    ),
+  },
+  {
+    name: "results lookup: no name filter",
+    claim: "the artifact has to be asked for by name, or a run with many artifacts hides it past the first page",
+    command: "npm run --silent test:scripts",
+    file: "scripts/watchdog.mjs",
+    mutate: swap("?name=${encodeURIComponent(resultsArtifact)}&per_page=100", "?per_page=100"),
   },
 ];
 

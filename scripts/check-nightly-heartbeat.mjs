@@ -217,3 +217,82 @@ export function assessHeartbeat(runs, opts = {}) {
     lastRunUrl: lastConclusive.html_url,
   };
 }
+
+/** The artifact the nightly uploads when its tests left results behind. */
+export const RESULTS_ARTIFACT = "test-results-json";
+
+/**
+ * The newest nightly run that finished with a pass or a fail, among the runs a
+ * timer or a person asked for. This is the run a morning check should judge.
+ */
+export function newestConclusiveRun(runs) {
+  if (!Array.isArray(runs)) return null;
+  const ordered = deliberateRuns([...runs]).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+  return ordered.find(isConclusive) ?? null;
+}
+
+/**
+ * A red night only means "the alert path worked" when the tests ran and left
+ * results behind. assessHeartbeat treats every failure that way. That holds for
+ * failing tests and is wrong for a job that dies before them: an install that
+ * finds no browser build for the runner, an expired secret, a failed checkout.
+ * Those nights end red without one test running, so the fix workflow and its
+ * email, which hang off a finished test run, never fire. assessHeartbeat counts
+ * such a night as one that reported and stays quiet until the failures reach
+ * seven in a row (see LESSONS.md, 2026-11-13).
+ *
+ * The evidence is the results artifact the nightly uploads after its tests, as
+ * the template does. A failed run without it did not finish its tests. A
+ * nightly that uploads its results under another name has to say so
+ * (MURAQIB_RESULTS_ARTIFACT, read in watchdog.mjs), or every failed night looks
+ * like this.
+ *
+ * @param {{conclusion: string|null, html_url?: string}|null} run
+ *        The newest conclusive run, from newestConclusiveRun.
+ * @param {{artifacts: string[]|null, failedStep?: string|null}|null} results
+ *        What the Actions API says about that run: the names of its artifacts
+ *        that have not expired, and the first step that failed. Null artifacts
+ *        means the API could not be read.
+ * @param {object} [opts]
+ * @param {string} [opts.resultsArtifact] Defaults to RESULTS_ARTIFACT.
+ */
+export function assessTestsRan(run, results, opts = {}) {
+  const resultsArtifact = opts.resultsArtifact || RESULTS_ARTIFACT;
+
+  if (!run || run.conclusion !== "failure") {
+    return {
+      ok: true,
+      code: "not-applicable",
+      message: "The newest finished nightly run did not fail, so there is nothing to check about its tests.",
+    };
+  }
+
+  if (!results || !Array.isArray(results.artifacts)) {
+    return {
+      ok: false,
+      code: "results-unreadable",
+      message:
+        "The newest finished nightly run failed, and the watchdog could not read its artifacts to tell whether the tests ran. Treating that as unhealthy on purpose: a failed night that cannot be told apart from one where no test ran is not evidence that anything was checked.",
+      lastRunUrl: run.html_url,
+    };
+  }
+
+  if (results.artifacts.includes(resultsArtifact)) {
+    return {
+      ok: true,
+      code: "tests-ran",
+      message: `The newest finished nightly run failed after its tests ran and left ${resultsArtifact}, so the test-failure alerts had their chance.`,
+      lastRunUrl: run.html_url,
+    };
+  }
+
+  const step = results.failedStep ? ` The first step that failed was "${results.failedStep}".` : "";
+  return {
+    ok: false,
+    code: "tests-never-ran",
+    message: `The newest finished nightly run failed without leaving ${resultsArtifact}, so it ended before its tests finished.${step} Every alert that hangs off a finished test run, the fix workflow and the email that comes with it, stayed quiet for this run, so nothing has told you that your app was not checked that night. If your nightly uploads its test results under another name, set MURAQIB_RESULTS_ARTIFACT to that name, otherwise every failed night looks like this.`,
+    lastRunUrl: run.html_url,
+  };
+}
